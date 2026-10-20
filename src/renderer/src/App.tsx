@@ -9,8 +9,9 @@ import { SettingsPage } from './pages/settings'
 import { NotesPage } from './pages/notes'
 import { LibraryPage } from './pages/library'
 import { ReaderPage } from './pages/reader'
+import { ProjectsPage } from './pages/projects'
 import { ComingSoonPage } from './pages/coming-soon'
-import { MentorIcon, ProjectsIcon } from './components/icons'
+import { MentorIcon } from './components/icons'
 
 function App(): React.JSX.Element {
   return (
@@ -24,17 +25,7 @@ function App(): React.JSX.Element {
         <Route path="anotacoes/:noteId?" element={<NotesPage />} />
         <Route path="biblioteca" element={<LibraryPage />} />
         <Route path="biblioteca/:bookId" element={<ReaderPage />} />
-        <Route
-          path="projetos"
-          element={
-            <ComingSoonPage
-              title="Projetos"
-              icon={<ProjectsIcon />}
-              step={6}
-              text="Integração com seus repositórios do GitHub e lembretes de commit."
-            />
-          }
-        />
+        <Route path="projetos" element={<ProjectsPage />} />
         <Route
           path="mentora"
           element={

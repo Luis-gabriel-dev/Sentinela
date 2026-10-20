@@ -176,6 +176,36 @@ export const bookOcrPages = sqliteTable(
   (t) => [primaryKey({ columns: [t.bookId, t.page] })]
 )
 
+/**
+ * Projetos acompanhados no GitHub. As colunas depois de `notes` são um cache do que veio da
+ * API na última sincronização (`syncedAt`); `weeklyCommits` é JSON com 12 números (mais antiga →
+ * semana atual).
+ */
+export const projects = sqliteTable('projects', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  repo: text('repo').notNull().unique(),
+  topicId: integer('topic_id').references(() => topics.id, { onDelete: 'set null' }),
+  /** Dias sem commit até o projeto ser considerado parado. */
+  staleDays: integer('stale_days').notNull().default(7),
+  notes: text('notes'),
+  description: text('description'),
+  htmlUrl: text('html_url'),
+  defaultBranch: text('default_branch'),
+  language: text('language'),
+  stars: integer('stars').notNull().default(0),
+  openIssues: integer('open_issues').notNull().default(0),
+  openPrs: integer('open_prs').notNull().default(0),
+  isPrivate: integer('is_private', { mode: 'boolean' }).notNull().default(false),
+  archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
+  lastCommitAt: integer('last_commit_at', { mode: 'timestamp_ms' }),
+  lastCommitMessage: text('last_commit_message'),
+  lastCommitUrl: text('last_commit_url'),
+  weeklyCommits: text('weekly_commits').notNull().default('[]'),
+  syncedAt: integer('synced_at', { mode: 'timestamp_ms' }),
+  syncError: text('sync_error'),
+  ...timestamps
+})
+
 /** Configurações gerais (chave → JSON). */
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),

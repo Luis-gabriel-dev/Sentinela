@@ -1,5 +1,8 @@
 import { z } from 'zod'
 
+// Mensagens de validação padrão em português do Brasil (vale para main e interface).
+z.config(z.locales.ptBR())
+
 export const PRIORITIES = ['low', 'normal', 'high', 'urgent'] as const
 export const prioritySchema = z.enum(PRIORITIES)
 export type Priority = z.infer<typeof prioritySchema>
@@ -196,6 +199,38 @@ export const ocrPageInputSchema = z.object({
     .refine((d) => d.byteLength <= 40 * 1024 * 1024, 'Imagem da página grande demais')
 })
 export type OcrPageInput = z.input<typeof ocrPageInputSchema>
+
+// GitHub
+
+export const githubTokenSchema = z
+  .string()
+  .trim()
+  .min(20, 'Token muito curto')
+  .max(300)
+  .regex(/^[\w-]+$/, 'Token com caracteres inválidos')
+
+/** "dono/repositorio" ou URL do GitHub (https://github.com/dono/repositorio[.git]). */
+export const repoInputSchema = z
+  .string()
+  .trim()
+  .transform((s) =>
+    s
+      .replace(/^https?:\/\/(www\.)?github\.com\//i, '')
+      .replace(/\.git$/i, '')
+      .replace(/\/+$/, '')
+  )
+  .pipe(
+    z.string().regex(/^[\w.-]+\/[\w.-]+$/, 'Use o formato dono/repositorio ou o endereço do GitHub')
+  )
+
+export const projectUpdateSchema = z
+  .object({
+    topicId: id.nullable(),
+    staleDays: z.number().int().min(1).max(365),
+    notes: optionalText(2000)
+  })
+  .partial()
+export type ProjectUpdate = z.input<typeof projectUpdateSchema>
 
 // Anexos (imagens coladas nas anotações)
 

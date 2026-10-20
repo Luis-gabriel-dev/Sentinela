@@ -1,12 +1,14 @@
 import { useMemo, type ReactNode } from 'react'
 import { Link } from 'react-router'
-import { ArrowRight } from 'lucide-react'
-import { AgendaIcon, TasksIcon, TopicsIcon } from '@renderer/components/icons'
+import { ArrowRight, TriangleAlert } from 'lucide-react'
+import { AgendaIcon, ProjectsIcon, TasksIcon, TopicsIcon } from '@renderer/components/icons'
 import { Checkbox } from '@renderer/components/ui/checkbox'
 import { Progress } from '@renderer/components/ui/progress'
 import { compareTasks, formatDate, PRIORITY_META, todayIso } from '@renderer/lib/format'
+import { projectHealth } from '@renderer/lib/projects'
 import {
   useCheckins,
+  useProjects,
   useSchedule,
   useTasks,
   useToggleCheckin,
@@ -56,6 +58,7 @@ export function TodayPage(): React.JSX.Element {
   const { data: topics = [] } = useTopics()
   const { data: openTasks = [] } = useTasks({ status: 'open' })
   const { data: checkins = [] } = useCheckins({ from: today, to: today })
+  const { data: projects = [] } = useProjects()
   const toggleCheckin = useToggleCheckin()
   const updateTask = useUpdateTask()
 
@@ -84,6 +87,13 @@ export function TodayPage(): React.JSX.Element {
     month: 'long'
   })
   const blocksDone = todayBlocks.filter((b) => doneIds.has(b.id)).length
+
+  const staleProjects = projects
+    .map((project) => ({ project, health: projectHealth(project) }))
+    .flatMap(({ project, health }) =>
+      health.kind === 'stale' ? [{ project, days: health.days }] : []
+    )
+    .toSorted((a, b) => b.days - a.days)
 
   return (
     <>
@@ -209,6 +219,30 @@ export function TodayPage(): React.JSX.Element {
             )}
           </Card>
         </div>
+
+        {staleProjects.length > 0 && (
+          <div className="lg:col-span-2">
+            <Card title="Projetos parados" icon={<ProjectsIcon />} link="/projetos">
+              <div className="grid gap-x-8 md:grid-cols-2">
+                {staleProjects.map(({ project, days }) => (
+                  <a
+                    key={project.id}
+                    href={project.htmlUrl ?? `https://github.com/${project.repo}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-accent/50"
+                  >
+                    <TriangleAlert className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                    <span className="min-w-0 flex-1 truncate text-sm">{project.repo}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      sem commit há {days} dias
+                    </span>
+                  </a>
+                ))}
+              </div>
+            </Card>
+          </div>
+        )}
       </div>
     </>
   )

@@ -118,6 +118,20 @@ aparecem no menu "OCR" do leitor.
   leitor): grid de 24 px, traço de 1,75 e preenchimento _duotone_ (`.icon-duo`, mais forte no item
   ativo). Ícones pequenos de ação continuam vindo do `lucide-react`.
 
+### GitHub (Projetos)
+
+- Consulta a API REST do GitHub direto do processo principal (`src/main/services/github.ts`),
+  sem SDK. Sem token funciona para repositórios públicos (60 consultas/hora); com um
+  _fine-grained token_ só de leitura (Contents, Issues, Pull requests) vê os privados e lista os
+  repositórios da conta (5.000 consultas/hora).
+- O token fica no banco **criptografado** pelo `safeStorage` do Electron (DPAPI no Windows), e
+  só o processo principal o lê; a interface nunca recebe o token de volta.
+- Cada sincronização faz cerca de 4 consultas por repositório: dados do repositório, último
+  commit, commits por semana (`/stats/participation`, exato) e PRs abertos. Os dados ficam em
+  cache na tabela `projects`; a página atualiza sozinha se o cache tiver mais de 30 minutos.
+- Um projeto fica "parado" quando passa do limite de dias sem commit configurado nele
+  (padrão: 7). Os parados aparecem na página Hoje.
+
 ### Migrations
 
 Depois de mudar `src/main/db/schema.ts`, rode `npm run db:generate`. Para SQL que o Drizzle não

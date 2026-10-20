@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow } from 'electron'
+import { app, shell, safeStorage, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -13,6 +13,7 @@ import { createFoldersService } from './services/folders'
 import { createBooksService } from './services/books'
 import { createHighlightsService } from './services/highlights'
 import { createOcrService } from './services/ocr'
+import { createGithubService } from './services/github'
 import { createDesktopService } from './desktop'
 import { handleFileProtocol, registerFileScheme } from './protocol'
 
@@ -113,6 +114,11 @@ if (!app.requestSingleInstanceLock()) {
       books,
       highlights: createHighlightsService(db),
       ocr,
+      ...createGithubService(db, {
+        available: () => safeStorage.isEncryptionAvailable(),
+        encrypt: (plain) => safeStorage.encryptString(plain).toString('base64'),
+        decrypt: (encoded) => safeStorage.decryptString(Buffer.from(encoded, 'base64'))
+      }),
       desktop: createDesktopService(createWindow)
     })
 

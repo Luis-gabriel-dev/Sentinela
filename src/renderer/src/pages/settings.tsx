@@ -1,4 +1,5 @@
 import { Monitor, Moon, Sun } from 'lucide-react'
+import { GithubConnect } from '@renderer/components/github-connect'
 import { PageHeader } from '@renderer/components/page-header'
 import { useAppInfo } from '@renderer/lib/queries'
 import { useTheme, type Theme } from '@renderer/lib/theme'
@@ -36,6 +37,11 @@ export function SettingsPage(): React.JSX.Element {
             </button>
           ))}
         </div>
+      </section>
+
+      <section className="mt-6 space-y-3 rounded-xl border bg-card p-5">
+        <h2 className="font-medium">GitHub</h2>
+        <GithubConnect />
       </section>
 
       <section className="mt-6 space-y-2 rounded-xl border bg-card p-5 text-sm">

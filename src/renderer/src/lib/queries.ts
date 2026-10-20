@@ -14,7 +14,10 @@ import type {
   BlockCheckin,
   Book,
   BookHighlight,
+  GithubRepo,
+  GithubStatus,
   LibraryFolder,
+  Project,
   Note,
   NoteSearchResult,
   NoteSummary,
@@ -38,7 +41,10 @@ export const keys = {
   books: ['books'],
   book: (id: number): QueryKey => ['books', id],
   highlights: (bookId: number): QueryKey => ['highlights', bookId],
-  ocr: (bookId: number): QueryKey => ['ocr', bookId]
+  ocr: (bookId: number): QueryKey => ['ocr', bookId],
+  github: ['github'],
+  githubRepos: ['github', 'repos'],
+  projects: ['projects']
 } satisfies Record<string, QueryKey | ((...args: never[]) => QueryKey)>
 
 export const useTopics = (): UseQueryResult<Topic[]> =>
@@ -100,6 +106,20 @@ export const useHighlights = (bookId: number): UseQueryResult<BookHighlight[]> =
 
 export const useOcrPages = (bookId: number): UseQueryResult<OcrPage[]> =>
   useQuery({ queryKey: keys.ocr(bookId), queryFn: () => api.ocr.pages(bookId) })
+
+export const useGithubStatus = (): UseQueryResult<GithubStatus> =>
+  useQuery({ queryKey: keys.github, queryFn: () => api.github.status() })
+
+export const useGithubRepos = (enabled: boolean): UseQueryResult<GithubRepo[]> =>
+  useQuery({
+    queryKey: keys.githubRepos,
+    queryFn: () => api.github.listRepos(),
+    enabled,
+    staleTime: 5 * 60_000
+  })
+
+export const useProjects = (): UseQueryResult<Project[]> =>
+  useQuery({ queryKey: keys.projects, queryFn: () => api.projects.list() })
 
 /** Argumentos e retorno de um método da Api, ex.: Method<'tasks', 'update'>. */
 type Method<K extends keyof Api, M extends keyof Api[K]> = Api[K][M] extends (
@@ -164,6 +184,14 @@ export const useAddBooks = mutationFor('books', 'add', [keys.books])
 export const useUpdateBook = mutationFor('books', 'update', [keys.books])
 export const useRelocateBook = mutationFor('books', 'relocate', [keys.books])
 export const useRemoveBook = mutationFor('books', 'remove', [keys.books])
+
+export const useConnectGithub = mutationFor('github', 'connect', [keys.github])
+export const useDisconnectGithub = mutationFor('github', 'disconnect', [keys.github])
+
+export const useAddProject = mutationFor('projects', 'add', [keys.projects])
+export const useUpdateProject = mutationFor('projects', 'update', [keys.projects])
+export const useRemoveProject = mutationFor('projects', 'remove', [keys.projects])
+export const useSyncProjects = mutationFor('projects', 'sync', [keys.projects])
 
 export const useCreateHighlight = mutationFor('highlights', 'create', [['highlights']])
 export const useUpdateHighlight = mutationFor('highlights', 'update', [['highlights']])

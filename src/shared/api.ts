@@ -9,6 +9,7 @@ import type {
   NoteCreate,
   NoteUpdate,
   OcrPageInput,
+  ProjectUpdate,
   ScheduleBlockCreate,
   ScheduleBlockUpdate,
   TaskCreate,
@@ -23,7 +24,10 @@ import type {
   BlockCheckin,
   Book,
   BookHighlight,
+  GithubRepo,
+  GithubStatus,
   LibraryFolder,
+  Project,
   Note,
   NoteSearchResult,
   NoteSummary,
@@ -108,6 +112,23 @@ export interface Api {
     recognizePage(input: OcrPageInput): Promise<OcrPage>
     /** Apaga o texto reconhecido do livro (para refazer). */
     clear(bookId: number): Promise<void>
+  }
+  github: {
+    status(): Promise<GithubStatus>
+    /** Valida o token no GitHub e guarda criptografado. */
+    connect(token: string): Promise<GithubStatus>
+    disconnect(): Promise<GithubStatus>
+    /** Repositórios da conta conectada (mais recentes primeiro). */
+    listRepos(): Promise<GithubRepo[]>
+  }
+  projects: {
+    list(): Promise<Project[]>
+    /** Adiciona por "dono/repositorio" ou URL e já sincroniza. */
+    add(repo: string): Promise<Project>
+    update(id: number, input: ProjectUpdate): Promise<Project>
+    remove(id: number): Promise<void>
+    /** Atualiza os dados do GitHub: um projeto ou todos. */
+    sync(id?: number): Promise<Project[]>
   }
   desktop: {
     /** Abre o seletor de arquivos do sistema para livros. Devolve os caminhos escolhidos. */

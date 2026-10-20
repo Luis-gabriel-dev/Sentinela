@@ -137,6 +137,50 @@ export interface AddBooksResult {
   skipped: string[]
 }
 
+export interface Project {
+  id: number
+  /** "dono/repositorio" */
+  repo: string
+  topicId: number | null
+  staleDays: number
+  notes: string | null
+  description: string | null
+  htmlUrl: string | null
+  defaultBranch: string | null
+  language: string | null
+  stars: number
+  openIssues: number
+  openPrs: number
+  isPrivate: boolean
+  archived: boolean
+  lastCommitAt: Date | null
+  lastCommitMessage: string | null
+  lastCommitUrl: string | null
+  /** Commits por semana, 12 semanas (mais antiga → atual). */
+  weeklyCommits: number[]
+  syncedAt: Date | null
+  syncError: string | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface GithubStatus {
+  connected: boolean
+  login: string | null
+  avatarUrl: string | null
+  /** O sistema consegue criptografar o token (Electron safeStorage). */
+  encryptionAvailable: boolean
+}
+
+export interface GithubRepo {
+  fullName: string
+  description: string | null
+  isPrivate: boolean
+  language: string | null
+  stars: number
+  pushedAt: Date | null
+}
+
 export interface AppInfo {
   version: string
   dbPath: string

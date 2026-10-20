@@ -35,7 +35,7 @@ const NAV: NavItem[][] = [
   [
     { to: '/anotacoes', label: 'Anotações', icon: NotesIcon },
     { to: '/biblioteca', label: 'Biblioteca', icon: LibraryIcon },
-    { to: '/projetos', label: 'Projetos', icon: ProjectsIcon, soon: true },
+    { to: '/projetos', label: 'Projetos', icon: ProjectsIcon },
     { to: '/mentora', label: 'IA mentora', icon: MentorIcon, soon: true }
   ]
 ]
@@ -109,7 +109,7 @@ export function AppShell(): React.JSX.Element {
           <img
             src={logoUrl}
             alt=""
-            className="size-8 rounded-lg shadow-md shadow-violet-600/25"
+            className="size-8 rounded-lg shadow-md shadow-orange-600/25"
             draggable={false}
           />
           <span className="text-[15px] font-semibold tracking-tight">Sentinela</span>
