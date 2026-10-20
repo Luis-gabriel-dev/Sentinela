@@ -1,4 +1,5 @@
 import { Monitor, Moon, Sun } from 'lucide-react'
+import { AiSettingsForm } from '@renderer/components/ai-settings'
 import { GithubConnect } from '@renderer/components/github-connect'
 import { PageHeader } from '@renderer/components/page-header'
 import { useAppInfo } from '@renderer/lib/queries'
@@ -37,6 +38,11 @@ export function SettingsPage(): React.JSX.Element {
             </button>
           ))}
         </div>
+      </section>
+
+      <section className="mt-6 space-y-3 rounded-xl border bg-card p-5">
+        <h2 className="font-medium">Inteligência artificial</h2>
+        <AiSettingsForm />
       </section>
 
       <section className="mt-6 space-y-3 rounded-xl border bg-card p-5">

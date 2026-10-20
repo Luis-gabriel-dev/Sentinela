@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ChevronRight, Pencil, Plus, Target, Trash2 } from 'lucide-react'
+import { ChevronRight, Pencil, Plus, Sparkles, Target, Trash2 } from 'lucide-react'
 import { TopicsIcon } from '@renderer/components/icons'
 import type { Topic } from '@shared/types'
 import { Button } from '@renderer/components/ui/button'
@@ -11,6 +11,7 @@ import { EmptyState, PageHeader } from '@renderer/components/page-header'
 import { useRemoveTopic, useTopics, useUpdateTopic } from '@renderer/lib/queries'
 import { buildTopicTree, topicProgress, type TopicNode } from '@renderer/lib/topics'
 import { cn } from '@renderer/lib/utils'
+import { SuggestTopicsDialog } from './suggest-topics-dialog'
 import { TopicDialog } from './topic-dialog'
 
 type DialogState = { open: false } | { open: true; topic?: Topic; parentId?: number | null }
@@ -20,6 +21,7 @@ export function TopicsPage(): React.JSX.Element {
   const tree = useMemo(() => buildTopicTree(topics), [topics])
   const [dialog, setDialog] = useState<DialogState>({ open: false })
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
+  const [suggesting, setSuggesting] = useState<Topic | null>(null)
 
   const toggle = (id: number): void =>
     setCollapsed((prev) => {
@@ -33,7 +35,8 @@ export function TopicsPage(): React.JSX.Element {
     toggle,
     isCollapsed: (id: number) => collapsed.has(id),
     addChild: (parentId: number) => setDialog({ open: true, parentId }),
-    edit: (topic: Topic) => setDialog({ open: true, topic })
+    edit: (topic: Topic) => setDialog({ open: true, topic }),
+    suggest: (topic: Topic) => setSuggesting(topic)
   }
 
   return (
@@ -71,6 +74,10 @@ export function TopicsPage(): React.JSX.Element {
         topic={dialog.open ? dialog.topic : undefined}
         parentId={dialog.open ? dialog.parentId : null}
       />
+      <SuggestTopicsDialog
+        topic={suggesting}
+        onOpenChange={(open) => !open && setSuggesting(null)}
+      />
     </>
   )
 }
@@ -80,6 +87,7 @@ interface ItemActions {
   isCollapsed: (id: number) => boolean
   addChild: (parentId: number) => void
   edit: (topic: Topic) => void
+  suggest: (topic: Topic) => void
 }
 
 function TopicItem({
@@ -179,6 +187,20 @@ function TopicItem({
         )}
 
         <div className="flex shrink-0 items-center opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => actions.suggest(node)}
+                aria-label="Dividir em tópicos com IA"
+                className="text-primary"
+              >
+                <Sparkles />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Dividir em tópicos com IA</TooltipContent>
+          </Tooltip>
           <Button
             variant="ghost"
             size="icon-sm"

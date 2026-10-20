@@ -44,7 +44,8 @@ As migrations em `drizzle/` são aplicadas automaticamente quando o app abre.
 ### Dependências
 
 `dependencies` tem **só** o que o processo principal carrega em tempo de execução (SQLite,
-Drizzle, Tesseract). Tudo que a interface usa (React, BlockNote, pdf.js...) vai em
+Drizzle, Tesseract, SDKs da Anthropic e da OpenAI e o `zod`, que o helper de saída estruturada
+do SDK importa). Tudo que a interface usa (React, BlockNote, pdf.js...) vai em
 `devDependencies`, porque o Vite já compila isso no bundle; se ficasse em `dependencies`, o
 electron-builder empacotaria esses pacotes de novo, inteiros.
 
@@ -131,6 +132,28 @@ aparecem no menu "OCR" do leitor.
   cache na tabela `projects`; a página atualiza sozinha se o cache tiver mais de 30 minutos.
 - Um projeto fica "parado" quando passa do limite de dias sem commit configurado nele
   (padrão: 7). Os parados aparecem na página Hoje.
+
+### IA mentora
+
+- **Provedores** (`src/main/ai/providers.ts`), todos atrás da mesma interface `AiClient`
+  (`generate` com saída estruturada validada por zod, `chat` com streaming, `listModels`):
+  - **Claude**: SDK oficial `@anthropic-ai/sdk`, modelo padrão `claude-opus-5-5`, esforço
+    `medium`, saída estruturada com `betaZodOutputFormat`. Nos modelos que suportam, o pedido vai
+    com `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`): se o modelo recusar por
+    política, a própria API repete em outro modelo.
+  - **OpenAI**: SDK oficial `openai`, Responses API (`responses.parse` com `zodTextFormat`).
+  - **Ollama**: API local (`/api/chat` com `format` = JSON Schema do zod). Sem chave, offline.
+- As chaves ficam criptografadas com `safeStorage`; ao salvar, a chave é validada listando os
+  modelos (não consome tokens).
+- **Contexto** (`src/main/ai/context.ts`): a conversa recebe um retrato dos estudos (progresso,
+  agenda, tarefas, resultados de exercícios, projetos, títulos das anotações). Exercícios usam o
+  texto das anotações e os destaques dos livros do tema, e reforçam questões erradas antes.
+- Tudo que a IA devolve é conferido em código antes de gravar ou mostrar: tópicos duplicados,
+  blocos fora do horário ou em conflito com a agenda, alternativas e índices inválidos.
+- Sugestões de tópicos e de agenda **não são gravadas** sozinhas: a interface mostra e o
+  estudante escolhe o que entra.
+- A resposta da conversa chega aos pedaços pelo canal `sentinela:ai-stream` (main → interface);
+  o preload só deixa escutar os canais listados em `EVENT_CHANNELS`.
 
 ### Migrations
 

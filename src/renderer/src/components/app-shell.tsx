@@ -36,7 +36,7 @@ const NAV: NavItem[][] = [
     { to: '/anotacoes', label: 'Anotações', icon: NotesIcon },
     { to: '/biblioteca', label: 'Biblioteca', icon: LibraryIcon },
     { to: '/projetos', label: 'Projetos', icon: ProjectsIcon },
-    { to: '/mentora', label: 'IA mentora', icon: MentorIcon, soon: true }
+    { to: '/mentora', label: 'IA mentora', icon: MentorIcon }
   ]
 ]
 
@@ -96,7 +96,7 @@ function ThemeSwitcher(): React.JSX.Element {
 }
 
 /** Páginas com layout próprio de tela cheia (painéis), sem o container centralizado. */
-const FULL_BLEED = [/^\/anotacoes/, /^\/biblioteca\/\d+/]
+const FULL_BLEED = [/^\/anotacoes/, /^\/biblioteca\/\d+/, /^\/mentora/]
 
 export function AppShell(): React.JSX.Element {
   const { pathname } = useLocation()

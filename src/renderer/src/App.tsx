@@ -10,8 +10,7 @@ import { NotesPage } from './pages/notes'
 import { LibraryPage } from './pages/library'
 import { ReaderPage } from './pages/reader'
 import { ProjectsPage } from './pages/projects'
-import { ComingSoonPage } from './pages/coming-soon'
-import { MentorIcon } from './components/icons'
+import { MentorPage } from './pages/mentor'
 
 function App(): React.JSX.Element {
   return (
@@ -26,17 +25,7 @@ function App(): React.JSX.Element {
         <Route path="biblioteca" element={<LibraryPage />} />
         <Route path="biblioteca/:bookId" element={<ReaderPage />} />
         <Route path="projetos" element={<ProjectsPage />} />
-        <Route
-          path="mentora"
-          element={
-            <ComingSoonPage
-              title="IA mentora"
-              icon={<MentorIcon />}
-              step={7}
-              text="Cronogramas, tópicos de estudo e exercícios com gabarito gerados pela IA."
-            />
-          }
-        />
+        <Route path="mentora" element={<MentorPage />} />
       </Route>
       {/* Leitor em janela separada: sem o menu lateral */}
       <Route

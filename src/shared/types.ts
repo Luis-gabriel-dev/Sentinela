@@ -1,4 +1,13 @@
-import type { BookFormat, HighlightColor, Priority, Recurrence } from './schemas'
+import type {
+  AiProvider,
+  BookFormat,
+  Difficulty,
+  ExerciseKind,
+  ExerciseResult,
+  HighlightColor,
+  Priority,
+  Recurrence
+} from './schemas'
 
 export interface Topic {
   id: number
@@ -180,6 +189,84 @@ export interface GithubRepo {
   stars: number
   pushedAt: Date | null
 }
+
+export interface AiSettings {
+  provider: AiProvider
+  /** Modelo escolhido para cada provedor. */
+  models: Record<AiProvider, string>
+  ollamaUrl: string
+  /** Há chave salva (o valor nunca volta para a interface). */
+  keys: { anthropic: boolean; openai: boolean }
+  encryptionAvailable: boolean
+}
+
+export interface TopicSuggestion {
+  name: string
+  description: string
+}
+
+export interface ScheduleSuggestion {
+  title: string
+  topicId: number | null
+  /** 0 = domingo ... 6 = sábado */
+  weekday: number
+  startTime: string
+  endTime: string
+  reason: string
+}
+
+export interface Exercise {
+  id: number
+  setId: number
+  position: number
+  kind: ExerciseKind
+  question: string
+  options: string[] | null
+  correctOption: number | null
+  answer: string
+  explanation: string | null
+  userChoice: number | null
+  userAnswer: string | null
+  result: ExerciseResult | null
+  answeredAt: Date | null
+}
+
+export interface ExerciseSetSummary {
+  id: number
+  topicId: number | null
+  title: string
+  difficulty: Difficulty
+  generatedBy: string
+  createdAt: Date
+  total: number
+  answered: number
+  correct: number
+}
+
+export interface ExerciseSet extends ExerciseSetSummary {
+  exercises: Exercise[]
+}
+
+export interface Conversation {
+  id: number
+  title: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface ChatMessage {
+  id: number
+  conversationId: number
+  role: 'user' | 'assistant'
+  content: string
+  createdAt: Date
+}
+
+/** Evento de streaming da resposta da mentora (canal AI_STREAM_CHANNEL). */
+export type AiStreamEvent =
+  | { conversationId: number; type: 'delta'; text: string }
+  /** Texto final consolidado (substitui o que foi recebido aos pedaços). */
+  | { conversationId: number; type: 'done'; text: string }
 
 export interface AppInfo {
   version: string

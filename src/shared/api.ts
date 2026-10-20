@@ -1,5 +1,12 @@
 import type {
+  AiKeyInput,
+  AiSettingsUpdate,
   AttachmentInput,
+  ExerciseAnswerInput,
+  GenerateExercisesInput,
+  MentorSendInput,
+  SuggestScheduleInput,
+  SuggestTopicsInput,
   BookUpdate,
   DateRange,
   FolderCreate,
@@ -20,6 +27,14 @@ import type {
 } from './schemas'
 import type {
   AddBooksResult,
+  AiSettings,
+  ChatMessage,
+  Conversation,
+  Exercise,
+  ExerciseSet,
+  ExerciseSetSummary,
+  ScheduleSuggestion,
+  TopicSuggestion,
   AppInfo,
   BlockCheckin,
   Book,
@@ -130,6 +145,36 @@ export interface Api {
     /** Atualiza os dados do GitHub: um projeto ou todos. */
     sync(id?: number): Promise<Project[]>
   }
+  ai: {
+    settings(): Promise<AiSettings>
+    updateSettings(input: AiSettingsUpdate): Promise<AiSettings>
+    /** Valida a chave no provedor e guarda criptografada. */
+    setKey(input: AiKeyInput): Promise<AiSettings>
+    clearKey(provider: 'anthropic' | 'openai'): Promise<AiSettings>
+    /** Modelos disponíveis no provedor ativo (também serve de teste de conexão). */
+    listModels(): Promise<string[]>
+  }
+  mentor: {
+    /** Propõe subtópicos para um tema (não salva: a interface mostra para revisão). */
+    suggestTopics(input: SuggestTopicsInput): Promise<TopicSuggestion[]>
+    /** Propõe blocos semanais de estudo (não salva). */
+    suggestSchedule(input: SuggestScheduleInput): Promise<ScheduleSuggestion[]>
+    generateExercises(input: GenerateExercisesInput): Promise<ExerciseSet>
+    conversations(): Promise<Conversation[]>
+    messages(conversationId: number): Promise<ChatMessage[]>
+    /**
+     * Envia uma mensagem à mentora. A resposta chega em pedaços pelo canal AI_STREAM_CHANNEL
+     * e a mensagem final é devolvida aqui.
+     */
+    send(input: MentorSendInput): Promise<{ conversation: Conversation; message: ChatMessage }>
+    deleteConversation(id: number): Promise<void>
+  }
+  exercises: {
+    sets(): Promise<ExerciseSetSummary[]>
+    get(setId: number): Promise<ExerciseSet>
+    answer(exerciseId: number, input: ExerciseAnswerInput): Promise<Exercise>
+    removeSet(setId: number): Promise<void>
+  }
   desktop: {
     /** Abre o seletor de arquivos do sistema para livros. Devolve os caminhos escolhidos. */
     pickBookFiles(multiple: boolean): Promise<string[]>
@@ -140,6 +185,10 @@ export interface Api {
 }
 
 export const IPC_CHANNEL = 'sentinela:api'
+
+/** Eventos do processo principal para a interface (main → renderer). */
+export const AI_STREAM_CHANNEL = 'sentinela:ai-stream'
+export const EVENT_CHANNELS = [AI_STREAM_CHANNEL] as const
 
 /** Protocolo próprio para servir arquivos locais (anexos, capas, livros) à interface. */
 export const FILE_PROTOCOL = 'sentinela'

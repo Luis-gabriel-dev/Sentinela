@@ -14,6 +14,8 @@ import { createBooksService } from './services/books'
 import { createHighlightsService } from './services/highlights'
 import { createOcrService } from './services/ocr'
 import { createGithubService } from './services/github'
+import { createMentorService } from './services/mentor'
+import type { Secrets } from './secrets'
 import { createDesktopService } from './desktop'
 import { handleFileProtocol, registerFileScheme } from './protocol'
 
@@ -101,6 +103,16 @@ if (!app.requestSingleInstanceLock()) {
     const { dispose: disposeOcr, ...ocr } = createOcrService(db, join(dataDir, 'tessdata'))
     app.on('will-quit', () => void disposeOcr())
 
+    const secrets: Secrets = {
+      available: () => safeStorage.isEncryptionAvailable(),
+      encrypt: (plain) => safeStorage.encryptString(plain).toString('base64'),
+      decrypt: (encoded) => safeStorage.decryptString(Buffer.from(encoded, 'base64'))
+    }
+    // Eventos main → interface (ex.: resposta da mentora chegando aos pedaços), para todas as janelas.
+    const broadcast = (channel: string, payload: unknown): void => {
+      for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload)
+    }
+
     registerApi({
       app: {
         info: async () => ({ version: app.getVersion(), dbPath })
@@ -114,11 +126,8 @@ if (!app.requestSingleInstanceLock()) {
       books,
       highlights: createHighlightsService(db),
       ocr,
-      ...createGithubService(db, {
-        available: () => safeStorage.isEncryptionAvailable(),
-        encrypt: (plain) => safeStorage.encryptString(plain).toString('base64'),
-        decrypt: (encoded) => safeStorage.decryptString(Buffer.from(encoded, 'base64'))
-      }),
+      ...createGithubService(db, secrets),
+      ...createMentorService(db, secrets, broadcast),
       desktop: createDesktopService(createWindow)
     })
 

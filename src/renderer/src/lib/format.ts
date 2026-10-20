@@ -1,4 +1,4 @@
-import type { Priority } from '@shared/schemas'
+import type { Difficulty, Priority } from '@shared/schemas'
 import type { Task } from '@shared/types'
 
 export const WEEKDAYS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
@@ -78,4 +78,10 @@ export function startOfWeek(d = new Date()): Date {
   const start = new Date(d.getFullYear(), d.getMonth(), d.getDate())
   start.setDate(start.getDate() - ((start.getDay() + 6) % 7))
   return start
+}
+
+export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
+  easy: 'Fácil',
+  medium: 'Média',
+  hard: 'Difícil'
 }

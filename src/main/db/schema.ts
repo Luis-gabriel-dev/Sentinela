@@ -8,7 +8,15 @@ import {
   type AnySQLiteColumn
 } from 'drizzle-orm/sqlite-core'
 // Import relativo (e não @shared) porque o drizzle-kit lê este arquivo fora do Vite.
-import { BOOK_FORMATS, HIGHLIGHT_COLORS, PRIORITIES, RECURRENCES } from '../../shared/schemas'
+import {
+  BOOK_FORMATS,
+  DIFFICULTIES,
+  EXERCISE_KINDS,
+  EXERCISE_RESULTS,
+  HIGHLIGHT_COLORS,
+  PRIORITIES,
+  RECURRENCES
+} from '../../shared/schemas'
 
 const timestamps = {
   createdAt: integer('created_at', { mode: 'timestamp_ms' })
@@ -205,6 +213,64 @@ export const projects = sqliteTable('projects', {
   syncError: text('sync_error'),
   ...timestamps
 })
+
+/** Conversas com a IA mentora. */
+export const aiConversations = sqliteTable('ai_conversations', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  title: text('title').notNull(),
+  ...timestamps
+})
+
+export const aiMessages = sqliteTable(
+  'ai_messages',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    conversationId: integer('conversation_id')
+      .notNull()
+      .references(() => aiConversations.id, { onDelete: 'cascade' }),
+    role: text('role', { enum: ['user', 'assistant'] }).notNull(),
+    content: text('content').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date())
+  },
+  (t) => [index('ai_messages_conversation_idx').on(t.conversationId)]
+)
+
+/** Listas de exercícios geradas pela IA, com o gabarito. */
+export const exerciseSets = sqliteTable('exercise_sets', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  topicId: integer('topic_id').references(() => topics.id, { onDelete: 'set null' }),
+  title: text('title').notNull(),
+  difficulty: text('difficulty', { enum: DIFFICULTIES }).notNull(),
+  /** "provedor/modelo" que gerou a lista. */
+  generatedBy: text('generated_by').notNull(),
+  ...timestamps
+})
+
+export const exercises = sqliteTable(
+  'exercises',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    setId: integer('set_id')
+      .notNull()
+      .references(() => exerciseSets.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    kind: text('kind', { enum: EXERCISE_KINDS }).notNull(),
+    question: text('question').notNull(),
+    /** JSON com as alternativas (só múltipla escolha). */
+    options: text('options'),
+    correctOption: integer('correct_option'),
+    /** Gabarito: resposta esperada. */
+    answer: text('answer').notNull(),
+    explanation: text('explanation'),
+    userChoice: integer('user_choice'),
+    userAnswer: text('user_answer'),
+    result: text('result', { enum: EXERCISE_RESULTS }),
+    answeredAt: integer('answered_at', { mode: 'timestamp_ms' })
+  },
+  (t) => [index('exercises_set_idx').on(t.setId)]
+)
 
 /** Configurações gerais (chave → JSON). */
 export const settings = sqliteTable('settings', {

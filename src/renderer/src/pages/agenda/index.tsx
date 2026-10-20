@@ -13,15 +13,17 @@ import type {
   EventDropArg,
   EventInput
 } from '@fullcalendar/core'
-import { Check } from 'lucide-react'
+import { Check, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import type { DateRange } from '@shared/schemas'
 import type { ScheduleBlock } from '@shared/types'
+import { Button } from '@renderer/components/ui/button'
 import { PageHeader } from '@renderer/components/page-header'
 import { toIsoDate, toTime } from '@renderer/lib/format'
 import { useCheckins, useSchedule, useTopics, useUpdateBlock } from '@renderer/lib/queries'
 import { cn } from '@renderer/lib/utils'
 import { BlockDialog, type BlockDraft } from './block-dialog'
+import { SuggestScheduleDialog } from './suggest-schedule-dialog'
 import './calendar.css'
 
 const DEFAULT_COLOR = '#6366f1'
@@ -38,6 +40,7 @@ export function AgendaPage(): React.JSX.Element {
   const { data: checkins = [] } = useCheckins(range)
   const update = useUpdateBlock()
   const [dialog, setDialog] = useState<DialogState>({ open: false })
+  const [suggesting, setSuggesting] = useState(false)
 
   const doneSet = useMemo(() => new Set(checkins.map((c) => `${c.blockId}:${c.date}`)), [checkins])
 
@@ -140,7 +143,13 @@ export function AgendaPage(): React.JSX.Element {
       <PageHeader
         title="Agenda"
         description="Clique e arraste num horário vazio para criar um bloco. Arraste os blocos para mudar o horário."
+        actions={
+          <Button variant="outline" onClick={() => setSuggesting(true)}>
+            <Sparkles className="text-primary" /> Montar com IA
+          </Button>
+        }
       />
+      <SuggestScheduleDialog open={suggesting} onOpenChange={setSuggesting} />
       <div className="min-h-0 flex-1 rounded-xl border bg-card p-4">
         <FullCalendar
           plugins={[timeGridPlugin, dayGridPlugin, multiMonthPlugin, interactionPlugin]}

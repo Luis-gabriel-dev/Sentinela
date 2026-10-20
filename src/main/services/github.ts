@@ -4,18 +4,12 @@ import { githubTokenSchema, projectUpdateSchema, repoInputSchema } from '@shared
 import type { GithubStatus, Project } from '@shared/types'
 import type { Db } from '../db/client'
 import { projects, settings } from '../db/schema'
+import type { Secrets } from '../secrets'
 
 const API = 'https://api.github.com'
 const TOKEN_KEY = 'github.token'
 const USER_KEY = 'github.user'
 const WEEKS = 12
-
-/** Criptografia do token (no app: Electron safeStorage, ligado ao usuário do Windows). */
-export interface Secrets {
-  available(): boolean
-  encrypt(plain: string): string
-  decrypt(encoded: string): string
-}
 
 type Fetch = typeof fetch
 type ProjectRow = typeof projects.$inferSelect

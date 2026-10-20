@@ -232,6 +232,72 @@ export const projectUpdateSchema = z
   .partial()
 export type ProjectUpdate = z.input<typeof projectUpdateSchema>
 
+// IA mentora
+
+export const AI_PROVIDERS = ['anthropic', 'openai', 'ollama'] as const
+export type AiProvider = (typeof AI_PROVIDERS)[number]
+export const aiProviderSchema = z.enum(AI_PROVIDERS)
+
+export const DIFFICULTIES = ['easy', 'medium', 'hard'] as const
+export type Difficulty = (typeof DIFFICULTIES)[number]
+export const EXERCISE_KINDS = ['multiple_choice', 'open'] as const
+export type ExerciseKind = (typeof EXERCISE_KINDS)[number]
+export const EXERCISE_RESULTS = ['correct', 'partial', 'wrong'] as const
+export type ExerciseResult = (typeof EXERCISE_RESULTS)[number]
+
+export const aiSettingsUpdateSchema = z
+  .object({
+    provider: aiProviderSchema,
+    /** Modelo do provedor ativo. */
+    model: z.string().trim().min(1).max(200),
+    ollamaUrl: z.url({ protocol: /^https?$/, message: 'Endereço inválido (use http://...)' })
+  })
+  .partial()
+export type AiSettingsUpdate = z.input<typeof aiSettingsUpdateSchema>
+
+export const aiKeySchema = z.object({
+  provider: z.enum(['anthropic', 'openai']),
+  key: z.string().trim().min(20, 'Chave muito curta').max(500)
+})
+export type AiKeyInput = z.input<typeof aiKeySchema>
+
+export const suggestTopicsSchema = z.object({
+  topicId: id,
+  instructions: optionalText(1000).optional()
+})
+export type SuggestTopicsInput = z.input<typeof suggestTopicsSchema>
+
+export const suggestScheduleSchema = z.object({
+  topicIds: z.array(id).min(1, 'Escolha pelo menos um tema').max(20),
+  hoursPerWeek: z.number().int().min(1).max(80),
+  availability: z.string().trim().min(3, 'Diga quando você pode estudar').max(1000)
+})
+export type SuggestScheduleInput = z.input<typeof suggestScheduleSchema>
+
+export const generateExercisesSchema = z.object({
+  topicId: id,
+  count: z.number().int().min(1).max(20),
+  difficulty: z.enum(DIFFICULTIES),
+  kinds: z.array(z.enum(EXERCISE_KINDS)).min(1, 'Escolha pelo menos um tipo'),
+  focus: optionalText(1000).optional()
+})
+export type GenerateExercisesInput = z.input<typeof generateExercisesSchema>
+
+export const exerciseAnswerSchema = z
+  .object({
+    choice: z.number().int().min(0).max(9),
+    text: z.string().max(10_000),
+    result: z.enum(EXERCISE_RESULTS)
+  })
+  .partial()
+export type ExerciseAnswerInput = z.input<typeof exerciseAnswerSchema>
+
+export const mentorSendSchema = z.object({
+  conversationId: id.nullable(),
+  text: z.string().trim().min(1).max(8000)
+})
+export type MentorSendInput = z.input<typeof mentorSendSchema>
+
 // Anexos (imagens coladas nas anotações)
 
 export const ATTACHMENT_MIME_TYPES = {

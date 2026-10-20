@@ -1,0 +1,189 @@
+import { desc, eq, inArray, isNull } from 'drizzle-orm'
+import type { Db } from '../db/client'
+import {
+  bookHighlights,
+  books,
+  exerciseSets,
+  exercises,
+  notes,
+  projects,
+  scheduleBlocks,
+  tasks,
+  topics
+} from '../db/schema'
+
+type TopicRow = typeof topics.$inferSelect
+
+const WEEKDAYS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
+const PRIORITY = { urgent: 'urgente', high: 'alta', normal: 'normal', low: 'baixa' } as const
+
+function startOfWeek(now = new Date()): Date {
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+  return d
+}
+
+const daysAgo = (date: Date): number => Math.floor((Date.now() - date.getTime()) / 86_400_000)
+
+/** Caminho "Cybersegurança / Redes / TCP" e utilitários da árvore de temas. */
+export function topicTree(db: Db): {
+  all: TopicRow[]
+  path: (id: number | null) => string
+  children: (id: number) => TopicRow[]
+  subtreeIds: (id: number) => number[]
+} {
+  const all = db.select().from(topics).all()
+  const byId = new Map(all.map((t) => [t.id, t]))
+  const children = (id: number): TopicRow[] =>
+    all.filter((t) => t.parentId === id).toSorted((a, b) => a.position - b.position)
+  const path = (id: number | null): string => {
+    const parts: string[] = []
+    for (
+      let t = id !== null ? byId.get(id) : undefined;
+      t;
+      t = t.parentId ? byId.get(t.parentId) : undefined
+    ) {
+      parts.unshift(t.name)
+    }
+    return parts.join(' / ')
+  }
+  const subtreeIds = (id: number): number[] => [
+    id,
+    ...children(id).flatMap((c) => subtreeIds(c.id))
+  ]
+  return { all, path, children, subtreeIds }
+}
+
+/** Retrato dos estudos em texto, para a mentora se basear em dados reais. */
+export function studySnapshot(db: Db): string {
+  const tree = topicTree(db)
+  const weekStart = startOfWeek()
+  const lines: string[] = [
+    `Hoje é ${new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.`
+  ]
+
+  lines.push('', '## Temas e progresso')
+  const tracked = tree.all.filter((t) => t.trackProgress)
+  for (const topic of tracked) {
+    const kids = tree.children(topic.id)
+    const done = kids.filter((k) => k.completedAt)
+    const thisWeek = done.filter((k) => k.completedAt! >= weekStart).length
+    const pending = kids.filter((k) => !k.completedAt).map((k) => k.name)
+    lines.push(
+      `- ${tree.path(topic.id)}: ${done.length}/${kids.length} tópicos concluídos` +
+        (topic.weeklyGoal ? ` (meta ${topic.weeklyGoal}/semana; ${thisWeek} nesta semana)` : '') +
+        (pending.length ? `. Pendentes: ${pending.slice(0, 12).join(', ')}` : '')
+    )
+  }
+  const roots = tree.all.filter((t) => t.parentId === null && !t.trackProgress)
+  if (roots.length) lines.push(`- Outros temas: ${roots.map((t) => t.name).join(', ')}`)
+  if (!tracked.length && !roots.length) lines.push('- (nenhum tema cadastrado)')
+
+  lines.push('', '## Agenda semanal')
+  const blocks = db.select().from(scheduleBlocks).all()
+  const weekly = blocks
+    .filter((b) => b.recurrence === 'weekly')
+    .toSorted(
+      (a, b) => (a.weekday ?? 0) - (b.weekday ?? 0) || a.startTime.localeCompare(b.startTime)
+    )
+  for (const b of weekly) {
+    lines.push(
+      `- ${WEEKDAYS[b.weekday ?? 0]} ${b.startTime}–${b.endTime}: ${b.title}` +
+        (b.topicId ? ` [${tree.path(b.topicId)}]` : '')
+    )
+  }
+  if (!weekly.length) lines.push('- (nenhum bloco semanal)')
+
+  lines.push('', '## Tarefas abertas')
+  const open = db
+    .select()
+    .from(tasks)
+    .where(isNull(tasks.completedAt))
+    .all()
+    .toSorted((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999'))
+    .slice(0, 20)
+  for (const t of open) {
+    lines.push(
+      `- ${t.title} (prioridade ${PRIORITY[t.priority]}${t.dueDate ? `, prazo ${t.dueDate}` : ''})` +
+        (t.topicId ? ` [${tree.path(t.topicId)}]` : '')
+    )
+  }
+  if (!open.length) lines.push('- (nenhuma)')
+
+  lines.push('', '## Exercícios (últimas listas)')
+  const sets = db.select().from(exerciseSets).orderBy(desc(exerciseSets.createdAt)).limit(10).all()
+  for (const set of sets) {
+    const items = db.select().from(exercises).where(eq(exercises.setId, set.id)).all()
+    const answered = items.filter((e) => e.result)
+    const correct = answered.filter((e) => e.result === 'correct').length
+    const partial = answered.filter((e) => e.result === 'partial').length
+    lines.push(
+      `- ${set.title}${set.topicId ? ` [${tree.path(set.topicId)}]` : ''}: ` +
+        (answered.length
+          ? `${correct} certas, ${partial} parciais, ${answered.length - correct - partial} erradas de ${answered.length} respondidas (de ${items.length})`
+          : `não respondida (${items.length} questões)`) +
+        `, há ${daysAgo(set.createdAt)} dias`
+    )
+  }
+  if (!sets.length) lines.push('- (nenhuma lista feita ainda)')
+
+  lines.push('', '## Projetos de programação (GitHub)')
+  const repos = db.select().from(projects).all()
+  for (const p of repos) {
+    lines.push(
+      `- ${p.repo}: ` +
+        (p.lastCommitAt ? `último commit há ${daysAgo(p.lastCommitAt)} dias` : 'sem commits') +
+        ` (avisar após ${p.staleDays} dias)${p.archived ? ', arquivado' : ''}`
+    )
+  }
+  if (!repos.length) lines.push('- (nenhum projeto acompanhado)')
+
+  lines.push('', '## Anotações por tema')
+  const noteRows = db.select({ title: notes.title, topicId: notes.topicId }).from(notes).all()
+  const byTopic = new Map<string, string[]>()
+  for (const n of noteRows) {
+    const key = n.topicId ? tree.path(n.topicId) : 'Sem tema'
+    byTopic.set(key, [...(byTopic.get(key) ?? []), n.title.trim() || 'Sem título'])
+  }
+  for (const [key, titles] of byTopic) lines.push(`- ${key}: ${titles.slice(0, 15).join('; ')}`)
+  if (!byTopic.size) lines.push('- (nenhuma anotação)')
+
+  return lines.join('\n')
+}
+
+/**
+ * Material de estudo de um tema (e subtemas): texto das anotações e destaques dos livros
+ * ligados a ele. Limitado para caber bem no pedido.
+ */
+export function topicMaterial(db: Db, topicId: number, maxChars = 24_000): string {
+  const tree = topicTree(db)
+  const ids = tree.subtreeIds(topicId)
+  const parts: string[] = []
+  let size = 0
+  const push = (text: string): boolean => {
+    if (size + text.length > maxChars) return false
+    parts.push(text)
+    size += text.length
+    return true
+  }
+
+  const noteRows = db.select().from(notes).where(inArray(notes.topicId, ids)).all()
+  for (const n of noteRows) {
+    if (!n.contentText.trim()) continue
+    if (
+      !push(
+        `### Anotação: ${n.title || 'Sem título'} [${tree.path(n.topicId)}]\n${n.contentText}\n`
+      )
+    )
+      break
+  }
+
+  const bookRows = db.select().from(books).where(inArray(books.topicId, ids)).all()
+  for (const book of bookRows) {
+    const hl = db.select().from(bookHighlights).where(eq(bookHighlights.bookId, book.id)).all()
+    if (!hl.length) continue
+    const text = hl.map((h) => `- "${h.text}"${h.note ? ` (nota: ${h.note})` : ''}`).join('\n')
+    if (!push(`### Destaques do livro "${book.title}"\n${text}\n`)) break
+  }
+  return parts.join('\n')
+}

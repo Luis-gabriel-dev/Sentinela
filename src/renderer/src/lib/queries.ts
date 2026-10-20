@@ -10,8 +10,13 @@ import { toast } from 'sonner'
 import type { Api } from '@shared/api'
 import type { DateRange, TaskFilter } from '@shared/schemas'
 import type {
+  AiSettings,
   AppInfo,
   BlockCheckin,
+  ChatMessage,
+  Conversation,
+  ExerciseSet,
+  ExerciseSetSummary,
   Book,
   BookHighlight,
   GithubRepo,
@@ -42,6 +47,12 @@ export const keys = {
   book: (id: number): QueryKey => ['books', id],
   highlights: (bookId: number): QueryKey => ['highlights', bookId],
   ocr: (bookId: number): QueryKey => ['ocr', bookId],
+  ai: ['ai'],
+  aiModels: ['ai', 'models'],
+  conversations: ['mentor', 'conversations'],
+  messages: (conversationId: number): QueryKey => ['mentor', 'messages', conversationId],
+  exerciseSets: ['exercises'],
+  exerciseSet: (id: number): QueryKey => ['exercises', id],
   github: ['github'],
   githubRepos: ['github', 'repos'],
   projects: ['projects']
@@ -106,6 +117,36 @@ export const useHighlights = (bookId: number): UseQueryResult<BookHighlight[]> =
 
 export const useOcrPages = (bookId: number): UseQueryResult<OcrPage[]> =>
   useQuery({ queryKey: keys.ocr(bookId), queryFn: () => api.ocr.pages(bookId) })
+
+export const useAiSettings = (): UseQueryResult<AiSettings> =>
+  useQuery({ queryKey: keys.ai, queryFn: () => api.ai.settings() })
+
+/** A IA está pronta para uso (Ollama não precisa de chave). */
+export const aiReady = (settings: AiSettings | undefined): boolean =>
+  !!settings && (settings.provider === 'ollama' || settings.keys[settings.provider])
+
+export const useAiModels = (enabled: boolean): UseQueryResult<string[]> =>
+  useQuery({ queryKey: keys.aiModels, queryFn: () => api.ai.listModels(), enabled, staleTime: 0 })
+
+export const useConversations = (): UseQueryResult<Conversation[]> =>
+  useQuery({ queryKey: keys.conversations, queryFn: () => api.mentor.conversations() })
+
+export const useMessages = (conversationId: number | null): UseQueryResult<ChatMessage[]> =>
+  useQuery({
+    queryKey: keys.messages(conversationId ?? 0),
+    queryFn: () => api.mentor.messages(conversationId!),
+    enabled: conversationId !== null
+  })
+
+export const useExerciseSets = (): UseQueryResult<ExerciseSetSummary[]> =>
+  useQuery({ queryKey: keys.exerciseSets, queryFn: () => api.exercises.sets() })
+
+export const useExerciseSet = (id: number | null): UseQueryResult<ExerciseSet> =>
+  useQuery({
+    queryKey: keys.exerciseSet(id ?? 0),
+    queryFn: () => api.exercises.get(id!),
+    enabled: id !== null
+  })
 
 export const useGithubStatus = (): UseQueryResult<GithubStatus> =>
   useQuery({ queryKey: keys.github, queryFn: () => api.github.status() })
@@ -184,6 +225,22 @@ export const useAddBooks = mutationFor('books', 'add', [keys.books])
 export const useUpdateBook = mutationFor('books', 'update', [keys.books])
 export const useRelocateBook = mutationFor('books', 'relocate', [keys.books])
 export const useRemoveBook = mutationFor('books', 'remove', [keys.books])
+
+// ['ai'] cobre configurações e a lista de modelos.
+export const useUpdateAiSettings = mutationFor('ai', 'updateSettings', [keys.ai])
+export const useSetAiKey = mutationFor('ai', 'setKey', [keys.ai])
+export const useClearAiKey = mutationFor('ai', 'clearKey', [keys.ai])
+
+// Sugestões não gravam nada: a interface mostra para revisão.
+export const useSuggestTopics = mutationFor('mentor', 'suggestTopics', [])
+export const useSuggestSchedule = mutationFor('mentor', 'suggestSchedule', [])
+export const useGenerateExercises = mutationFor('mentor', 'generateExercises', [keys.exerciseSets])
+export const useDeleteConversation = mutationFor('mentor', 'deleteConversation', [
+  keys.conversations
+])
+
+export const useAnswerExercise = mutationFor('exercises', 'answer', [keys.exerciseSets])
+export const useRemoveExerciseSet = mutationFor('exercises', 'removeSet', [keys.exerciseSets])
 
 export const useConnectGithub = mutationFor('github', 'connect', [keys.github])
 export const useDisconnectGithub = mutationFor('github', 'disconnect', [keys.github])
