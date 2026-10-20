@@ -88,6 +88,20 @@
   --color-sidebar-border: var(--sidebar-border);
 }
 
+/* Ícones próprios (components/icons.tsx): preenchimento suave, mais forte no item ativo. */
+.sentinela-icon .icon-duo {
+  opacity: 0.16;
+  transition: opacity 150ms;
+}
+aside [aria-current='page'] .sentinela-icon {
+  color: var(--primary);
+}
+[aria-current='page'] .sentinela-icon .icon-duo,
+.icon-strong .sentinela-icon .icon-duo,
+.sentinela-icon.icon-strong .icon-duo {
+  opacity: 0.38;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

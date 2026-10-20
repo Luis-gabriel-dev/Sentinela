@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { ChevronRight, Layers, Pencil, Plus, Target, Trash2 } from 'lucide-react'
+import { ChevronRight, Pencil, Plus, Target, Trash2 } from 'lucide-react'
+import { TopicsIcon } from '@renderer/components/icons'
 import type { Topic } from '@shared/types'
 import { Button } from '@renderer/components/ui/button'
 import { Checkbox } from '@renderer/components/ui/checkbox'
@@ -48,7 +49,7 @@ export function TopicsPage(): React.JSX.Element {
       />
 
       {!isLoading && tree.length === 0 ? (
-        <EmptyState icon={<Layers />} title="Nenhum tema ainda">
+        <EmptyState icon={<TopicsIcon />} title="Nenhum tema ainda">
           Crie temas grandes como Cybersegurança ou Programação e divida em assuntos e tópicos.
         </EmptyState>
       ) : (

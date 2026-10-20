@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Ícone do Sentinela: escudo (a sentinela da rotina), livro aberto (estudos) e faísca (IA).
+       Fonte de todos os ícones do app: rode `npm run icons` depois de alterar. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6d6af8" />
+      <stop offset="0.55" stop-color="#6d3df0" />
+      <stop offset="1" stop-color="#4c1d95" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0.28" cy="0.18" r="0.75">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.32" />
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6366f1" />
+      <stop offset="1" stop-color="#5b21b6" />
+    </linearGradient>
+    <linearGradient id="shield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" />
+      <stop offset="1" stop-color="#e9e5ff" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" rx="232" fill="url(#bg)" />
+  <rect width="1024" height="1024" rx="232" fill="url(#glow)" />
+
+  <!-- escudo -->
+  <path
+    d="M512 170 L796 280 V488 C796 670 678 806 512 864 C346 806 228 670 228 488 V280 Z"
+    fill="url(#shield)"
+  />
+
+  <!-- faísca -->
+  <path
+    d="M512 262 L527 306 L571 321 L527 336 L512 380 L497 336 L453 321 L497 306 Z"
+    fill="url(#ink)"
+  />
+
+  <!-- livro aberto -->
+  <path d="M500 452 C440 414 378 404 318 418 V660 C378 646 440 656 500 692 Z" fill="url(#ink)" />
+  <path d="M524 452 C584 414 646 404 706 418 V660 C646 646 584 656 524 692 Z" fill="url(#ink)" />
+  <path d="M360 484 C396 478 432 484 466 500" stroke="#ffffff" stroke-opacity="0.55" stroke-width="18" stroke-linecap="round" fill="none" />
+  <path d="M360 548 C396 542 432 548 466 564" stroke="#ffffff" stroke-opacity="0.55" stroke-width="18" stroke-linecap="round" fill="none" />
+  <path d="M664 484 C628 478 592 484 558 500" stroke="#ffffff" stroke-opacity="0.55" stroke-width="18" stroke-linecap="round" fill="none" />
+  <path d="M664 548 C628 542 592 548 558 564" stroke="#ffffff" stroke-opacity="0.55" stroke-width="18" stroke-linecap="round" fill="none" />
+</svg>

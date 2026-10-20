@@ -1,8 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import 'pdfjs-dist/web/pdf_viewer.css'
-import { ChevronDown, ChevronUp, Loader2, Minus, Moon, Plus, Search } from 'lucide-react'
-import type { BookHighlight } from '@shared/types'
+import { ChevronDown, ChevronUp, Loader2, Minus, Moon, Plus, RotateCcw, Search } from 'lucide-react'
+import type { BookHighlight, OcrPage } from '@shared/types'
+import { ScanTextIcon } from '@renderer/components/icons'
 import { Button } from '@renderer/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from '@renderer/components/ui/dropdown-menu'
 import { Input } from '@renderer/components/ui/input'
 import {
   Select,
@@ -16,7 +25,16 @@ import { fetchBookFile, HIGHLIGHT_STYLES } from '@renderer/lib/books'
 import { useTheme } from '@renderer/lib/theme'
 import { cn } from '@renderer/lib/utils'
 import { loadPdfViewer, openPdf, type PDFDocumentProxy } from '@renderer/lib/pdfjs'
+import {
+  injectOcrText,
+  pdfHasText,
+  searchOcr,
+  textLayerHasNativeText,
+  type OcrMatch
+} from '@renderer/lib/ocr'
+import { OcrBar } from './ocr-bar'
 import type { ReaderProps } from './types'
+import { useOcr } from './use-ocr'
 
 type Viewer = InstanceType<Awaited<ReturnType<typeof loadPdfViewer>>['PDFViewer']>
 type EventBus = InstanceType<Awaited<ReturnType<typeof loadPdfViewer>>['EventBus']>
@@ -105,6 +123,10 @@ export function PdfReader({
   const [scale, setScale] = useState('page-width')
   const [findQuery, setFindQuery] = useState('')
   const [matches, setMatches] = useState<{ current: number; total: number } | null>(null)
+  const [scanned, setScanned] = useState(false)
+  const ocr = useOcr(book.id, () => viewerRef.current?.pdf ?? null)
+  const ocrPagesRef = useRef(new Map<number, OcrPage>())
+  const ocrFindRef = useRef<{ query: string; list: OcrMatch[]; index: number } | null>(null)
   const { resolved } = useTheme()
   const [invertPages, setInvertPages] = useState(() => {
     try {
@@ -167,12 +189,30 @@ export function PdfReader({
     for (let i = 1; i <= viewer.pagesCount; i++) drawPage(i)
   }
 
+  /** Põe o texto do OCR na camada de texto da página (só em páginas sem texto próprio). */
+  const injectOcr = (pageNumber: number): void => {
+    const ocrPage = ocrPagesRef.current.get(pageNumber)
+    const div = viewerRef.current?.viewer.getPageView(pageNumber - 1)?.div as
+      HTMLDivElement | undefined
+    const textLayer = div?.querySelector<HTMLElement>('.textLayer')
+    if (ocrPage && textLayer && !textLayerHasNativeText(textLayer)) {
+      injectOcrText(textLayer, ocrPage)
+    }
+  }
+
   useEffect(() => {
     highlightsRef.current = highlights
     drawAll()
     // drawAll lê tudo por refs
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlights])
+
+  useEffect(() => {
+    ocrPagesRef.current = new Map(ocr.pages.map((p) => [p.page, p]))
+    ocrFindRef.current = null
+    const viewer = viewerRef.current?.viewer
+    if (viewer) for (const p of ocr.pages) injectOcr(p.page)
+  }, [ocr.pages])
 
   // Carrega o PDF e monta o visualizador do pdf.js.
   useEffect(() => {
@@ -202,6 +242,7 @@ export function PdfReader({
         linkService.setDocument(pdf)
         viewerRef.current = { viewer, eventBus, pdf }
         setNumPages(pdf.numPages)
+        void pdfHasText(pdf).then((hasText) => !cancelled && setScanned(!hasText))
 
         const saved = parseLocation<PdfLocation>(book.location)
         eventBus.on('pagesinit', () => {
@@ -240,9 +281,10 @@ export function PdfReader({
             })
           }
         )
-        eventBus.on('textlayerrendered', ({ pageNumber }: { pageNumber: number }) =>
+        eventBus.on('textlayerrendered', ({ pageNumber }: { pageNumber: number }) => {
+          injectOcr(pageNumber)
           drawPage(pageNumber)
-        )
+        })
         eventBus.on(
           'updatefindmatchescount',
           ({ matchesCount }: { matchesCount: { current: number; total: number } }) =>
@@ -375,10 +417,44 @@ export function PdfReader({
     if (viewer) setViewerState(viewer, { currentScaleValue: value })
   }
 
+  /** Busca no texto do OCR (PDFs escaneados não têm texto para o pdf.js procurar). */
+  const findInOcr = (query: string, previous: boolean, restart: boolean): void => {
+    const state = ocrFindRef.current
+    const list = !restart && state?.query === query ? state.list : searchOcr(ocr.pages, query)
+    if (list.length === 0) {
+      ocrFindRef.current = null
+      setMatches({ current: 0, total: 0 })
+      return
+    }
+    const index =
+      restart || !state || state.query !== query
+        ? 0
+        : (state.index + (previous ? -1 : 1) + list.length) % list.length
+    ocrFindRef.current = { query, list, index }
+    setMatches({ current: index + 1, total: list.length })
+
+    const match = list[index]
+    const div = viewerRef.current?.viewer.getPageView(match.page - 1)?.div as
+      HTMLDivElement | undefined
+    if (!div) return
+    containerRef.current!.scrollTop = div.offsetTop + match.y * div.clientHeight - 140
+    // a página pode ainda estar sendo desenhada depois da rolagem
+    window.setTimeout(() => {
+      containerRef.current
+        ?.querySelectorAll('.ocr-hit')
+        .forEach((el) => el.classList.remove('ocr-hit'))
+      div.querySelector(`.ocr-line[data-line="${match.line}"]`)?.classList.add('ocr-hit')
+    }, 350)
+  }
+
   const find = (findPrevious = false, again = true): void => {
     const query = findQuery.trim()
     if (!query) {
       setMatches(null)
+      return
+    }
+    if (scanned) {
+      findInOcr(query, findPrevious, !again)
       return
     }
     viewerRef.current?.eventBus.dispatch('find', {
@@ -394,6 +470,7 @@ export function PdfReader({
   }
 
   const zoomLabel = ZOOM_PRESETS[scale] ?? `${Math.round(Number(scale) * 100)}%`
+  const ocrComplete = numPages > 0 && ocr.pages.length >= numPages
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -471,6 +548,33 @@ export function PdfReader({
         </div>
 
         <div className="flex items-center gap-1">
+          {scanned && ocrComplete && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="text-muted-foreground">
+                  <ScanTextIcon className="size-4" /> OCR
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72">
+                <DropdownMenuLabel className="font-normal">
+                  <p className="text-sm font-medium">Texto reconhecido por OCR</p>
+                  <p className="text-xs text-muted-foreground">
+                    Confiança média: {ocr.averageConfidence ?? 0}%
+                  </p>
+                  {ocr.lowConfidencePages.length > 0 && (
+                    <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                      Baixa confiança nas páginas {ocr.lowConfidencePages.slice(0, 12).join(', ')}
+                      {ocr.lowConfidencePages.length > 12 ? '…' : ''}
+                    </p>
+                  )}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={ocr.redo}>
+                  <RotateCcw /> Refazer OCR
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <div className="relative">
             <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -500,6 +604,10 @@ export function PdfReader({
           </Button>
         </div>
       </div>
+
+      {scanned && ready && (ocr.progress || !ocrComplete) && (
+        <OcrBar ocr={ocr} numPages={numPages} />
+      )}
 
       <div className="relative min-h-0 flex-1 bg-muted/40">
         <div

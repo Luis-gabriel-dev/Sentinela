@@ -1,5 +1,5 @@
 import { useParams } from 'react-router'
-import { NotebookPen } from 'lucide-react'
+import { NotesIcon } from '@renderer/components/icons'
 import { EmptyState } from '@renderer/components/page-header'
 import { NoteEditor } from './note-editor'
 import { NotesSidebar } from './notes-sidebar'
@@ -16,7 +16,7 @@ export function NotesPage(): React.JSX.Element {
           <NoteEditor noteId={id} />
         ) : (
           <div className="p-8">
-            <EmptyState icon={<NotebookPen />} title="Escolha ou crie uma anotação">
+            <EmptyState icon={<NotesIcon />} title="Escolha ou crie uma anotação">
               As anotações ficam organizadas pelos seus temas. Passe o mouse sobre um tema e clique
               no ícone de + para criar uma anotação dentro dele.
             </EmptyState>

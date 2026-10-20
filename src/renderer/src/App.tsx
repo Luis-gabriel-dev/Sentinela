@@ -10,6 +10,7 @@ import { NotesPage } from './pages/notes'
 import { LibraryPage } from './pages/library'
 import { ReaderPage } from './pages/reader'
 import { ComingSoonPage } from './pages/coming-soon'
+import { MentorIcon, ProjectsIcon } from './components/icons'
 
 function App(): React.JSX.Element {
   return (
@@ -28,6 +29,7 @@ function App(): React.JSX.Element {
           element={
             <ComingSoonPage
               title="Projetos"
+              icon={<ProjectsIcon />}
               step={6}
               text="Integração com seus repositórios do GitHub e lembretes de commit."
             />
@@ -38,6 +40,7 @@ function App(): React.JSX.Element {
           element={
             <ComingSoonPage
               title="IA mentora"
+              icon={<MentorIcon />}
               step={7}
               text="Cronogramas, tópicos de estudo e exercícios com gabarito gerados pela IA."
             />

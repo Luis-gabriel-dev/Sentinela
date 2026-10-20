@@ -12,6 +12,7 @@ import { createAttachmentsService } from './services/attachments'
 import { createFoldersService } from './services/folders'
 import { createBooksService } from './services/books'
 import { createHighlightsService } from './services/highlights'
+import { createOcrService } from './services/ocr'
 import { createDesktopService } from './desktop'
 import { handleFileProtocol, registerFileScheme } from './protocol'
 
@@ -27,7 +28,8 @@ function createWindow(route = ''): BrowserWindow {
     autoHideMenuBar: true,
     backgroundColor: '#09090b',
     title: 'Sentinela',
-    ...(process.platform === 'linux' ? { icon } : {}),
+    // No Windows empacotado o ícone vem do .exe; aqui ele vale para o modo dev e o Linux.
+    ...(process.platform !== 'darwin' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true
@@ -94,6 +96,10 @@ if (!app.requestSingleInstanceLock()) {
       : join(process.resourcesPath, 'pdfjs')
     handleFileProtocol({ attachmentsDir, coversDir, pdfjsAssetsDir, bookPath: filePath })
 
+    // dispose encerra o worker do Tesseract; não vai para a API exposta à interface.
+    const { dispose: disposeOcr, ...ocr } = createOcrService(db, join(dataDir, 'tessdata'))
+    app.on('will-quit', () => void disposeOcr())
+
     registerApi({
       app: {
         info: async () => ({ version: app.getVersion(), dbPath })
@@ -106,6 +112,7 @@ if (!app.requestSingleInstanceLock()) {
       folders: createFoldersService(db),
       books,
       highlights: createHighlightsService(db),
+      ocr,
       desktop: createDesktopService(createWindow)
     })
 

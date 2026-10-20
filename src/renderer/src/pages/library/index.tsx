@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { BookPlus, FolderPlus, Library, Pencil, Search, Trash2, Upload } from 'lucide-react'
+import { BookPlus, FolderPlus, Pencil, Search, Trash2 } from 'lucide-react'
+import { LibraryIcon, UploadBookIcon } from '@renderer/components/icons'
 import { toast } from 'sonner'
 import type { Book, LibraryFolder } from '@shared/types'
 import { Button } from '@renderer/components/ui/button'
@@ -242,7 +243,7 @@ export function LibraryPage(): React.JSX.Element {
 
       {!isLoading && visible.length === 0 ? (
         <EmptyState
-          icon={<Library />}
+          icon={<LibraryIcon />}
           title={books.length === 0 ? 'Sua biblioteca está vazia' : 'Nenhum livro aqui'}
         >
           {books.length === 0
@@ -265,7 +266,7 @@ export function LibraryPage(): React.JSX.Element {
       {dragging && (
         <div className="pointer-events-none fixed inset-0 left-60 z-40 grid place-items-center bg-background/80 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-primary px-16 py-12 text-primary">
-            <Upload className="size-10" />
+            <UploadBookIcon className="size-10" />
             <p className="text-lg font-medium">
               Solte para adicionar{activeFolder ? ` em ${activeFolder.name}` : ''}
             </p>

@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from 'react'
 import { Link } from 'react-router'
-import { ArrowRight, CalendarDays, ListChecks, Target } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
+import { AgendaIcon, TasksIcon, TopicsIcon } from '@renderer/components/icons'
 import { Checkbox } from '@renderer/components/ui/checkbox'
 import { Progress } from '@renderer/components/ui/progress'
 import { compareTasks, formatDate, PRIORITY_META, todayIso } from '@renderer/lib/format'
@@ -96,7 +97,7 @@ export function TodayPage(): React.JSX.Element {
       </header>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card title="Agenda de hoje" icon={<CalendarDays />} link="/agenda">
+        <Card title="Agenda de hoje" icon={<AgendaIcon />} link="/agenda">
           {todayBlocks.length === 0 ? (
             <Empty>Nada na agenda para hoje.</Empty>
           ) : (
@@ -136,7 +137,7 @@ export function TodayPage(): React.JSX.Element {
           )}
         </Card>
 
-        <Card title="Foco em tarefas" icon={<ListChecks />} link="/tarefas">
+        <Card title="Foco em tarefas" icon={<TasksIcon />} link="/tarefas">
           {focusTasks.length === 0 ? (
             <Empty>Nenhuma tarefa urgente, de alta prioridade ou vencendo.</Empty>
           ) : (
@@ -175,7 +176,7 @@ export function TodayPage(): React.JSX.Element {
         </Card>
 
         <div className="lg:col-span-2">
-          <Card title="Progresso dos estudos" icon={<Target />} link="/temas">
+          <Card title="Progresso dos estudos" icon={<TopicsIcon />} link="/temas">
             {tracked.length === 0 ? (
               <Empty>Ative “Acompanhar progresso” em um assunto para vê-lo aqui.</Empty>
             ) : (

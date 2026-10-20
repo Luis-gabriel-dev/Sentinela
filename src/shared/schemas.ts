@@ -184,6 +184,19 @@ export const highlightUpdateSchema = z
 export type HighlightCreate = z.input<typeof highlightCreateSchema>
 export type HighlightUpdate = z.input<typeof highlightUpdateSchema>
 
+// OCR (páginas de PDFs escaneados renderizadas como imagem pela interface)
+
+export const ocrPageInputSchema = z.object({
+  bookId: id,
+  page: z.number().int().positive(),
+  width: z.number().int().positive().max(10_000),
+  height: z.number().int().positive().max(10_000),
+  image: z
+    .instanceof(Uint8Array)
+    .refine((d) => d.byteLength <= 40 * 1024 * 1024, 'Imagem da página grande demais')
+})
+export type OcrPageInput = z.input<typeof ocrPageInputSchema>
+
 // Anexos (imagens coladas nas anotações)
 
 export const ATTACHMENT_MIME_TYPES = {

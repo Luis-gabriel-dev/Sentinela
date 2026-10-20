@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Highlighter, Trash2, X } from 'lucide-react'
+import { Trash2, X } from 'lucide-react'
+import { HighlightIcon } from '@renderer/components/icons'
 import { HIGHLIGHT_COLORS } from '@shared/schemas'
 import type { Book, BookHighlight } from '@shared/types'
 import { Button } from '@renderer/components/ui/button'
@@ -22,7 +23,7 @@ export function HighlightsPanel({ book, highlights, onGoTo, onClose }: Props): R
   return (
     <aside className="flex w-80 shrink-0 flex-col border-l bg-card">
       <header className="flex items-center gap-2 border-b px-4 py-3">
-        <Highlighter className="size-4 text-muted-foreground" />
+        <HighlightIcon className="size-4 text-muted-foreground" />
         <h2 className="text-sm font-medium">Destaques</h2>
         <span className="text-xs text-muted-foreground">{highlights.length}</span>
         <Button

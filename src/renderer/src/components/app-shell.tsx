@@ -1,43 +1,42 @@
+import type { ComponentType } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
-import {
-  CalendarDays,
-  FolderGit2,
-  Layers,
-  Library,
-  ListChecks,
-  Monitor,
-  Moon,
-  NotebookPen,
-  Settings,
-  ShieldHalf,
-  Sparkles,
-  Sun,
-  type LucideIcon
-} from 'lucide-react'
+import { Monitor, Moon, Sun, type LucideIcon } from 'lucide-react'
+import logoUrl from '../../../../build/icon.svg'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 import { ErrorBoundary } from '@renderer/components/error-boundary'
+import {
+  AgendaIcon,
+  LibraryIcon,
+  MentorIcon,
+  NotesIcon,
+  ProjectsIcon,
+  SettingsIcon,
+  TasksIcon,
+  TodayIcon,
+  TopicsIcon
+} from '@renderer/components/icons'
 import { useTheme, type Theme } from '@renderer/lib/theme'
 import { cn } from '@renderer/lib/utils'
 
 interface NavItem {
   to: string
   label: string
-  icon: LucideIcon
+  icon: ComponentType<{ className?: string }>
   soon?: boolean
 }
 
 const NAV: NavItem[][] = [
   [
-    { to: '/', label: 'Hoje', icon: Sun },
-    { to: '/agenda', label: 'Agenda', icon: CalendarDays },
-    { to: '/tarefas', label: 'Tarefas', icon: ListChecks },
-    { to: '/temas', label: 'Temas e progresso', icon: Layers }
+    { to: '/', label: 'Hoje', icon: TodayIcon },
+    { to: '/agenda', label: 'Agenda', icon: AgendaIcon },
+    { to: '/tarefas', label: 'Tarefas', icon: TasksIcon },
+    { to: '/temas', label: 'Temas e progresso', icon: TopicsIcon }
   ],
   [
-    { to: '/anotacoes', label: 'Anotações', icon: NotebookPen },
-    { to: '/biblioteca', label: 'Biblioteca', icon: Library },
-    { to: '/projetos', label: 'Projetos', icon: FolderGit2, soon: true },
-    { to: '/mentora', label: 'IA mentora', icon: Sparkles, soon: true }
+    { to: '/anotacoes', label: 'Anotações', icon: NotesIcon },
+    { to: '/biblioteca', label: 'Biblioteca', icon: LibraryIcon },
+    { to: '/projetos', label: 'Projetos', icon: ProjectsIcon, soon: true },
+    { to: '/mentora', label: 'IA mentora', icon: MentorIcon, soon: true }
   ]
 ]
 
@@ -59,7 +58,7 @@ function SidebarLink({ item }: { item: NavItem }): React.JSX.Element {
         )
       }
     >
-      <item.icon className="size-4 shrink-0" />
+      <item.icon className="size-4.5" />
       <span className="truncate">{item.label}</span>
       {item.soon && (
         <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
@@ -107,9 +106,12 @@ export function AppShell(): React.JSX.Element {
     <div className="flex h-full">
       <aside className="flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar px-3 py-4">
         <div className="mb-6 flex items-center gap-2.5 px-2">
-          <div className="grid size-8 place-items-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-md shadow-indigo-500/20">
-            <ShieldHalf className="size-4.5" />
-          </div>
+          <img
+            src={logoUrl}
+            alt=""
+            className="size-8 rounded-lg shadow-md shadow-violet-600/25"
+            draggable={false}
+          />
           <span className="text-[15px] font-semibold tracking-tight">Sentinela</span>
         </div>
 
@@ -124,7 +126,9 @@ export function AppShell(): React.JSX.Element {
         </nav>
 
         <div className="flex flex-col gap-3">
-          <SidebarLink item={{ to: '/configuracoes', label: 'Configurações', icon: Settings }} />
+          <SidebarLink
+            item={{ to: '/configuracoes', label: 'Configurações', icon: SettingsIcon }}
+          />
           <ThemeSwitcher />
         </div>
       </aside>

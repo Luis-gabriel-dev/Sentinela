@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { ListChecks, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
+import { TasksIcon } from '@renderer/components/icons'
 import type { Task } from '@shared/types'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
@@ -90,7 +91,7 @@ export function TasksPage(): React.JSX.Element {
       </form>
 
       {!isLoading && sorted.length === 0 ? (
-        <EmptyState icon={<ListChecks />} title="Nenhuma tarefa aqui">
+        <EmptyState icon={<TasksIcon />} title="Nenhuma tarefa aqui">
           Use o campo acima para criar uma tarefa rapidamente.
         </EmptyState>
       ) : (

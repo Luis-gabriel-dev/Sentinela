@@ -5,11 +5,14 @@ directories:
 files:
   - '!**/.vscode/*'
   - '!src/*'
+  - '!scripts/*'
   - '!drizzle/*'
   - '!{electron.vite.config,drizzle.config}.{js,ts,mjs,cjs}'
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md,guide.md,projeto.md,components.json}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  # OCR usa só os dados de idioma "best_int"
+  - '!node_modules/@tesseract.js-data/*/4.0.0/**'
 asarUnpack:
   - resources/**
 extraResources:

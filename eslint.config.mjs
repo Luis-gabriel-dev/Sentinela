@@ -29,5 +29,10 @@ export default defineConfig(
       ...eslintPluginReactRefresh.configs.vite.rules
     }
   },
+  {
+    // scripts/ são JavaScript puro (rodam com node/electron), sem anotações de tipo
+    files: ['scripts/**/*.{js,mjs}'],
+    rules: { '@typescript-eslint/explicit-function-return-type': 'off' }
+  },
   eslintConfigPrettier
 )

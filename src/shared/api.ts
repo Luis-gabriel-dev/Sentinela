@@ -8,6 +8,7 @@ import type {
   HighlightUpdate,
   NoteCreate,
   NoteUpdate,
+  OcrPageInput,
   ScheduleBlockCreate,
   ScheduleBlockUpdate,
   TaskCreate,
@@ -26,6 +27,7 @@ import type {
   Note,
   NoteSearchResult,
   NoteSummary,
+  OcrPage,
   ScheduleBlock,
   Task,
   Topic
@@ -98,6 +100,14 @@ export interface Api {
     create(input: HighlightCreate): Promise<BookHighlight>
     update(id: number, input: HighlightUpdate): Promise<BookHighlight>
     remove(id: number): Promise<void>
+  }
+  ocr: {
+    /** Páginas do livro que já passaram por OCR. */
+    pages(bookId: number): Promise<OcrPage[]>
+    /** Reconhece o texto de uma página (imagem PNG) e guarda o resultado. */
+    recognizePage(input: OcrPageInput): Promise<OcrPage>
+    /** Apaga o texto reconhecido do livro (para refazer). */
+    clear(bookId: number): Promise<void>
   }
   desktop: {
     /** Abre o seletor de arquivos do sistema para livros. Devolve os caminhos escolhidos. */

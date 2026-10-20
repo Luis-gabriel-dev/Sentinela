@@ -116,6 +116,21 @@ export interface BookHighlight {
   updatedAt: Date
 }
 
+export interface OcrLine {
+  text: string
+  /** [x, y, largura, altura], normalizados (0–1) em relação à página */
+  box: [number, number, number, number]
+  /** 0–100 */
+  confidence: number
+}
+
+export interface OcrPage {
+  page: number
+  lines: OcrLine[]
+  /** Confiança média da página, 0–100 */
+  confidence: number
+}
+
 export interface AddBooksResult {
   added: Book[]
   /** Arquivos já presentes na biblioteca ou com extensão não suportada. */

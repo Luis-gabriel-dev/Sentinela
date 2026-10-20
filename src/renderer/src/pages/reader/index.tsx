@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { AppWindow, ArrowLeft, FileQuestion, Highlighter } from 'lucide-react'
+import { AppWindow, ArrowLeft, FileQuestion } from 'lucide-react'
+import { HighlightIcon } from '@renderer/components/icons'
 import type { HighlightColor } from '@shared/schemas'
 import type { BookHighlight } from '@shared/types'
 import { Button } from '@renderer/components/ui/button'
@@ -117,7 +118,7 @@ export function ReaderPage({ standalone = false }: { standalone?: boolean }): Re
           size="sm"
           onClick={() => setPanelOpen((open) => !open)}
         >
-          <Highlighter /> Destaques
+          <HighlightIcon className="size-4" /> Destaques
           {highlights.length > 0 && (
             <span className="text-xs text-muted-foreground tabular-nums">{highlights.length}</span>
           )}

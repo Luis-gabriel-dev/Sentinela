@@ -18,6 +18,7 @@ import type {
   Note,
   NoteSearchResult,
   NoteSummary,
+  OcrPage,
   ScheduleBlock,
   Task,
   Topic
@@ -36,7 +37,8 @@ export const keys = {
   folders: ['folders'],
   books: ['books'],
   book: (id: number): QueryKey => ['books', id],
-  highlights: (bookId: number): QueryKey => ['highlights', bookId]
+  highlights: (bookId: number): QueryKey => ['highlights', bookId],
+  ocr: (bookId: number): QueryKey => ['ocr', bookId]
 } satisfies Record<string, QueryKey | ((...args: never[]) => QueryKey)>
 
 export const useTopics = (): UseQueryResult<Topic[]> =>
@@ -95,6 +97,9 @@ export const useBook = (id: number): UseQueryResult<Book> =>
 
 export const useHighlights = (bookId: number): UseQueryResult<BookHighlight[]> =>
   useQuery({ queryKey: keys.highlights(bookId), queryFn: () => api.highlights.list(bookId) })
+
+export const useOcrPages = (bookId: number): UseQueryResult<OcrPage[]> =>
+  useQuery({ queryKey: keys.ocr(bookId), queryFn: () => api.ocr.pages(bookId) })
 
 /** Argumentos e retorno de um método da Api, ex.: Method<'tasks', 'update'>. */
 type Method<K extends keyof Api, M extends keyof Api[K]> = Api[K][M] extends (

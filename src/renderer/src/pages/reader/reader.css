@@ -31,6 +31,20 @@
   mix-blend-mode: screen;
 }
 
+/* Texto do OCR: invisível como o do pdf.js, mas selecionável. */
+.sentinela-pdf .textLayer .ocr-line {
+  position: absolute;
+  white-space: pre;
+  transform-origin: 0 0;
+  color: transparent;
+  font-family: sans-serif;
+}
+
+.sentinela-pdf .textLayer .ocr-line.ocr-hit {
+  background: rgb(99 102 241 / 0.45);
+  border-radius: 2px;
+}
+
 /* Resultados da busca do pdf.js */
 .sentinela-pdf .textLayer .highlight {
   --highlight-bg-color: rgb(99 102 241 / 0.35);

@@ -154,6 +154,28 @@ export const bookHighlights = sqliteTable(
   (t) => [index('book_highlights_book_idx').on(t.bookId)]
 )
 
+/**
+ * Texto reconhecido por OCR nas páginas de PDFs escaneados.
+ * `lines`: JSON com as linhas e suas posições normalizadas (0–1) na página.
+ */
+export const bookOcrPages = sqliteTable(
+  'book_ocr_pages',
+  {
+    bookId: integer('book_id')
+      .notNull()
+      .references(() => books.id, { onDelete: 'cascade' }),
+    page: integer('page').notNull(),
+    text: text('text').notNull(),
+    lines: text('lines').notNull(),
+    /** Confiança média do Tesseract, 0–100. */
+    confidence: real('confidence').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date())
+  },
+  (t) => [primaryKey({ columns: [t.bookId, t.page] })]
+)
+
 /** Configurações gerais (chave → JSON). */
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
