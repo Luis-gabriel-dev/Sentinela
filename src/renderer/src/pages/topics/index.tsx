@@ -198,8 +198,8 @@ function TopicItem({
             title={`Excluir "${node.name}"?`}
             description={
               hasChildren
-                ? 'Todos os subtemas também serão excluídos. Tarefas e blocos da agenda ligados a eles ficam sem tema.'
-                : 'Tarefas e blocos da agenda ligados a ele ficam sem tema.'
+                ? 'Todos os subtemas também serão excluídos. Tarefas, blocos da agenda e anotações ligados a eles ficam sem tema.'
+                : 'Tarefas, blocos da agenda e anotações ligados a ele ficam sem tema.'
             }
             onConfirm={() => remove.mutate([node.id])}
           >

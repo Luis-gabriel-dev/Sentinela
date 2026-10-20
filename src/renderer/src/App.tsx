@@ -5,6 +5,7 @@ import { AgendaPage } from './pages/agenda'
 import { TasksPage } from './pages/tasks'
 import { TopicsPage } from './pages/topics'
 import { SettingsPage } from './pages/settings'
+import { NotesPage } from './pages/notes'
 import { ComingSoonPage } from './pages/coming-soon'
 
 function App(): React.JSX.Element {
@@ -16,16 +17,7 @@ function App(): React.JSX.Element {
         <Route path="tarefas" element={<TasksPage />} />
         <Route path="temas" element={<TopicsPage />} />
         <Route path="configuracoes" element={<SettingsPage />} />
-        <Route
-          path="anotacoes"
-          element={
-            <ComingSoonPage
-              title="Anotações"
-              step={2}
-              text="Blocos de anotação em árvore, no estilo Notion."
-            />
-          }
-        />
+        <Route path="anotacoes/:noteId?" element={<NotesPage />} />
         <Route
           path="biblioteca"
           element={

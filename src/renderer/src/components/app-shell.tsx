@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router'
+import { NavLink, Outlet, useLocation } from 'react-router'
 import {
   CalendarDays,
   FolderGit2,
@@ -33,7 +33,7 @@ const NAV: NavItem[][] = [
     { to: '/temas', label: 'Temas e progresso', icon: Layers }
   ],
   [
-    { to: '/anotacoes', label: 'Anotações', icon: NotebookPen, soon: true },
+    { to: '/anotacoes', label: 'Anotações', icon: NotebookPen },
     { to: '/biblioteca', label: 'Biblioteca', icon: Library, soon: true },
     { to: '/projetos', label: 'Projetos', icon: FolderGit2, soon: true },
     { to: '/mentora', label: 'IA mentora', icon: Sparkles, soon: true }
@@ -95,7 +95,13 @@ function ThemeSwitcher(): React.JSX.Element {
   )
 }
 
+/** Páginas com layout próprio de tela cheia (painéis), sem o container centralizado. */
+const FULL_BLEED = ['/anotacoes']
+
 export function AppShell(): React.JSX.Element {
+  const { pathname } = useLocation()
+  const fullBleed = FULL_BLEED.some((p) => pathname.startsWith(p))
+
   return (
     <div className="flex h-full">
       <aside className="flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar px-3 py-4">
@@ -122,11 +128,17 @@ export function AppShell(): React.JSX.Element {
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-6xl px-8 py-8">
+      {fullBleed ? (
+        <main className="min-w-0 flex-1">
           <Outlet />
-        </div>
-      </main>
+        </main>
+      ) : (
+        <main className="min-w-0 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-6xl px-8 py-8">
+            <Outlet />
+          </div>
+        </main>
+      )}
     </div>
   )
 }

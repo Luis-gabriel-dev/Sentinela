@@ -80,6 +80,23 @@ export const blockCheckins = sqliteTable(
   (t) => [primaryKey({ columns: [t.blockId, t.date] })]
 )
 
+/**
+ * Anotações. `content` guarda os blocos do BlockNote em JSON; `contentText` é o texto puro
+ * extraído deles, indexado pela tabela virtual FTS5 `notes_fts` (criada em migration manual).
+ */
+export const notes = sqliteTable(
+  'notes',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    topicId: integer('topic_id').references(() => topics.id, { onDelete: 'set null' }),
+    title: text('title').notNull().default(''),
+    content: text('content').notNull().default('[]'),
+    contentText: text('content_text').notNull().default(''),
+    ...timestamps
+  },
+  (t) => [index('notes_topic_idx').on(t.topicId)]
+)
+
 /** Configurações gerais (chave → JSON). */
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),

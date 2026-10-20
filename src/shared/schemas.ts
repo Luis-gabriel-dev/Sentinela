@@ -104,3 +104,40 @@ export type ScheduleBlockUpdate = z.input<typeof scheduleBlockUpdateSchema>
 
 export const dateRangeSchema = z.object({ from: isoDateSchema, to: isoDateSchema })
 export type DateRange = z.input<typeof dateRangeSchema>
+
+// Anotações (conteúdo = blocos do BlockNote)
+
+const noteFields = {
+  title: z.string().trim().max(200),
+  topicId: id.nullable(),
+  content: z.array(z.unknown())
+}
+
+export const noteCreateSchema = z
+  .object({ title: noteFields.title, topicId: noteFields.topicId })
+  .partial()
+export const noteUpdateSchema = z.object(noteFields).partial()
+export type NoteCreate = z.input<typeof noteCreateSchema>
+export type NoteUpdate = z.input<typeof noteUpdateSchema>
+
+export const noteSearchSchema = z.string().trim().max(200)
+
+// Anexos (imagens coladas nas anotações)
+
+export const ATTACHMENT_MIME_TYPES = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp'
+} as const
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+
+export const attachmentSchema = z.object({
+  mimeType: z.enum(Object.keys(ATTACHMENT_MIME_TYPES) as [keyof typeof ATTACHMENT_MIME_TYPES], {
+    message: 'Só imagens PNG, JPG, GIF ou WEBP'
+  }),
+  data: z
+    .instanceof(Uint8Array)
+    .refine((d) => d.byteLength <= MAX_ATTACHMENT_BYTES, 'Imagem maior que 20 MB')
+})
+export type AttachmentInput = z.input<typeof attachmentSchema>

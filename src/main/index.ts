@@ -7,6 +7,9 @@ import { registerApi } from './ipc'
 import { createTopicsService } from './services/topics'
 import { createTasksService } from './services/tasks'
 import { createScheduleService } from './services/schedule'
+import { createNotesService } from './services/notes'
+import { createAttachmentsService } from './services/attachments'
+import { handleFileProtocol, registerFileScheme } from './protocol'
 
 function createWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
@@ -47,6 +50,8 @@ app.commandLine.appendSwitch('lang', 'pt-BR')
 // Permite rodar com outra pasta de dados (testes, perfis separados).
 if (process.env['SENTINELA_DATA_DIR']) app.setPath('userData', process.env['SENTINELA_DATA_DIR'])
 
+registerFileScheme()
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
@@ -72,13 +77,18 @@ if (!app.requestSingleInstanceLock()) {
     const { db, close } = openDatabase(dbPath, migrationsFolder)
     app.on('will-quit', close)
 
+    const attachmentsDir = join(app.getPath('userData'), 'attachments')
+    handleFileProtocol(attachmentsDir)
+
     registerApi({
       app: {
         info: async () => ({ version: app.getVersion(), dbPath })
       },
       topics: createTopicsService(db),
       tasks: createTasksService(db),
-      schedule: createScheduleService(db)
+      schedule: createScheduleService(db),
+      notes: createNotesService(db),
+      attachments: createAttachmentsService(attachmentsDir)
     })
 
     createWindow()

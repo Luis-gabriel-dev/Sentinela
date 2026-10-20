@@ -9,7 +9,8 @@ npm install
 npm run dev
 ```
 
-O banco fica em `%APPDATA%\Sentinela\sentinela.db` (o caminho aparece em Configurações).
+O banco fica em `%APPDATA%\Sentinela\sentinela.db` (o caminho aparece em Configurações), e as
+imagens coladas nas anotações em `%APPDATA%\Sentinela\attachments\`.
 Para usar outra pasta de dados, por exemplo para testes:
 
 ```powershell
@@ -40,13 +41,21 @@ src/
 │   ├── db/            Schema Drizzle e conexão SQLite
 │   ├── services/      Regras de negócio (sem depender do Electron)
 │   ├── ipc.ts         Despacha "namespace.metodo" para os serviços
+│   ├── protocol.ts    Protocolo sentinela:// que serve arquivos locais (anexos)
 │   └── index.ts       Janela, banco e registro da API
 ├── preload/           Expõe só window.sentinela.invoke para a interface
 └── renderer/src/      Interface React
     ├── components/    Layout e componentes compartilhados (ui/ = shadcn)
     ├── lib/           Cliente da API, hooks do React Query, tema, utilitários
-    └── pages/         Hoje, Agenda, Tarefas, Temas, Configurações
+    └── pages/         Hoje, Agenda, Tarefas, Temas, Anotações, Configurações
 ```
+
+### Migrations
+
+Depois de mudar `src/main/db/schema.ts`, rode `npm run db:generate`. Para SQL que o Drizzle não
+gera sozinho (tabelas FTS5, gatilhos), crie uma migration vazia com
+`npx drizzle-kit generate --custom --name <nome>` e escreva o SQL nela, separando os comandos
+com `--> statement-breakpoint` (veja `drizzle/0002_notes_fts.sql`).
 
 ### Adicionando um método novo na API
 

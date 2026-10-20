@@ -48,6 +48,30 @@ export interface BlockCheckin {
   date: string
 }
 
+/** Anotação sem o conteúdo (para listas e árvore). */
+export interface NoteSummary {
+  id: number
+  topicId: number | null
+  title: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface Note extends NoteSummary {
+  /** Blocos do BlockNote. */
+  content: unknown[]
+}
+
+export interface NoteSearchResult {
+  id: number
+  topicId: number | null
+  title: string
+  /** Trecho do texto; os termos encontrados ficam entre SNIPPET_MARK.start e SNIPPET_MARK.end. */
+  snippet: string
+}
+
+export const SNIPPET_MARK = { start: '\u0001', end: '\u0002' } as const
+
 export interface AppInfo {
   version: string
   dbPath: string

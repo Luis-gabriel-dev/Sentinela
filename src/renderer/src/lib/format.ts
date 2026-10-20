@@ -36,6 +36,8 @@ export function compareTasks(a: Task, b: Task): number {
   )
 }
 
+export const noteTitle = (title: string): string => title.trim() || 'Sem título'
+
 export const COLOR_PRESETS = [
   '#6366f1',
   '#8b5cf6',

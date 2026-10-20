@@ -1,5 +1,8 @@
 import type {
+  AttachmentInput,
   DateRange,
+  NoteCreate,
+  NoteUpdate,
   ScheduleBlockCreate,
   ScheduleBlockUpdate,
   TaskCreate,
@@ -8,7 +11,16 @@ import type {
   TopicCreate,
   TopicUpdate
 } from './schemas'
-import type { AppInfo, BlockCheckin, ScheduleBlock, Task, Topic } from './types'
+import type {
+  AppInfo,
+  BlockCheckin,
+  Note,
+  NoteSearchResult,
+  NoteSummary,
+  ScheduleBlock,
+  Task,
+  Topic
+} from './types'
 
 /**
  * Contrato entre a interface e o processo principal.
@@ -39,6 +51,22 @@ export interface Api {
     /** Marca/desmarca o bloco como concluído no dia. Retorna o novo estado. */
     toggleCheckin(blockId: number, date: string): Promise<boolean>
   }
+  notes: {
+    list(): Promise<NoteSummary[]>
+    get(id: number): Promise<Note>
+    create(input: NoteCreate): Promise<NoteSummary>
+    update(id: number, input: NoteUpdate): Promise<NoteSummary>
+    remove(id: number): Promise<void>
+    /** Busca de texto completo em títulos e conteúdo. */
+    search(query: string): Promise<NoteSearchResult[]>
+  }
+  attachments: {
+    /** Salva a imagem na pasta de dados e devolve a URL (sentinela://attachments/...). */
+    save(input: AttachmentInput): Promise<string>
+  }
 }
 
 export const IPC_CHANNEL = 'sentinela:api'
+
+/** Protocolo próprio para servir arquivos locais (anexos, e depois livros) à interface. */
+export const FILE_PROTOCOL = 'sentinela'

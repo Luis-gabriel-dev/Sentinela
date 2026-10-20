@@ -9,7 +9,16 @@ import {
 import { toast } from 'sonner'
 import type { Api } from '@shared/api'
 import type { DateRange, TaskFilter } from '@shared/schemas'
-import type { AppInfo, BlockCheckin, ScheduleBlock, Task, Topic } from '@shared/types'
+import type {
+  AppInfo,
+  BlockCheckin,
+  Note,
+  NoteSearchResult,
+  NoteSummary,
+  ScheduleBlock,
+  Task,
+  Topic
+} from '@shared/types'
 import { api } from './api'
 
 export const keys = {
@@ -17,7 +26,10 @@ export const keys = {
   tasks: (filter?: TaskFilter): QueryKey => ['tasks', filter ?? {}],
   schedule: ['schedule'],
   checkins: (range: DateRange): QueryKey => ['checkins', range],
-  appInfo: ['app-info']
+  appInfo: ['app-info'],
+  notes: ['notes'],
+  note: (id: number): QueryKey => ['note', id],
+  noteSearch: (query: string): QueryKey => ['notes', 'search', query]
 } satisfies Record<string, QueryKey | ((...args: never[]) => QueryKey)>
 
 export const useTopics = (): UseQueryResult<Topic[]> =>
@@ -38,6 +50,22 @@ export const useCheckins = (range: DateRange | null): UseQueryResult<BlockChecki
 
 export const useAppInfo = (): UseQueryResult<AppInfo> =>
   useQuery({ queryKey: keys.appInfo, queryFn: () => api.app.info() })
+
+export const useNotes = (): UseQueryResult<NoteSummary[]> =>
+  useQuery({ queryKey: keys.notes, queryFn: () => api.notes.list() })
+
+/** Conteúdo sempre buscado de novo ao abrir: o editor é a fonte da verdade enquanto aberto. */
+export const useNote = (id: number): UseQueryResult<Note> =>
+  useQuery({ queryKey: keys.note(id), queryFn: () => api.notes.get(id), gcTime: 0 })
+
+export const useNoteSearch = (query: string): UseQueryResult<NoteSearchResult[]> =>
+  useQuery({
+    queryKey: keys.noteSearch(query),
+    queryFn: () => api.notes.search(query),
+    enabled: query.trim().length > 0,
+    staleTime: 0,
+    placeholderData: (previous) => previous
+  })
 
 /** Argumentos e retorno de um método da Api, ex.: Method<'tasks', 'update'>. */
 type Method<K extends keyof Api, M extends keyof Api[K]> = Api[K][M] extends (
@@ -73,8 +101,8 @@ function mutationFor<K extends keyof Api, M extends keyof Api[K]>(
   }
 }
 
-// Tarefas e agenda referenciam temas, então excluir um tema recarrega tudo.
-const topicDeps = [keys.topics, ['tasks'], keys.schedule]
+// Tarefas, agenda e anotações referenciam temas, então excluir um tema recarrega tudo.
+const topicDeps = [keys.topics, ['tasks'], keys.schedule, keys.notes]
 
 export const useCreateTopic = mutationFor('topics', 'create', [keys.topics])
 export const useUpdateTopic = mutationFor('topics', 'update', [keys.topics])
@@ -88,3 +116,7 @@ export const useCreateBlock = mutationFor('schedule', 'create', [keys.schedule])
 export const useUpdateBlock = mutationFor('schedule', 'update', [keys.schedule])
 export const useRemoveBlock = mutationFor('schedule', 'remove', [keys.schedule, ['checkins']])
 export const useToggleCheckin = mutationFor('schedule', 'toggleCheckin', [['checkins']])
+
+export const useCreateNote = mutationFor('notes', 'create', [keys.notes])
+export const useUpdateNote = mutationFor('notes', 'update', [keys.notes])
+export const useRemoveNote = mutationFor('notes', 'remove', [keys.notes])
