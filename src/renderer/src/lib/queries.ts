@@ -12,6 +12,9 @@ import type { DateRange, TaskFilter } from '@shared/schemas'
 import type {
   AppInfo,
   BlockCheckin,
+  Book,
+  BookHighlight,
+  LibraryFolder,
   Note,
   NoteSearchResult,
   NoteSummary,
@@ -29,7 +32,11 @@ export const keys = {
   appInfo: ['app-info'],
   notes: ['notes'],
   note: (id: number): QueryKey => ['note', id],
-  noteSearch: (query: string): QueryKey => ['notes', 'search', query]
+  noteSearch: (query: string): QueryKey => ['notes', 'search', query],
+  folders: ['folders'],
+  books: ['books'],
+  book: (id: number): QueryKey => ['books', id],
+  highlights: (bookId: number): QueryKey => ['highlights', bookId]
 } satisfies Record<string, QueryKey | ((...args: never[]) => QueryKey)>
 
 export const useTopics = (): UseQueryResult<Topic[]> =>
@@ -66,6 +73,28 @@ export const useNoteSearch = (query: string): UseQueryResult<NoteSearchResult[]>
     staleTime: 0,
     placeholderData: (previous) => previous
   })
+
+export const useFolders = (): UseQueryResult<LibraryFolder[]> =>
+  useQuery({ queryKey: keys.folders, queryFn: () => api.folders.list() })
+
+/**
+ * A lista diz se cada arquivo ainda existe e traz o progresso salvo por outras janelas,
+ * então é reconsultada ao abrir a biblioteca e ao voltar para a janela.
+ */
+export const useBooks = (): UseQueryResult<Book[]> =>
+  useQuery({
+    queryKey: keys.books,
+    queryFn: () => api.books.list(),
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always'
+  })
+
+/** Sempre buscado de novo ao abrir o leitor: a posição salva precisa estar atualizada. */
+export const useBook = (id: number): UseQueryResult<Book> =>
+  useQuery({ queryKey: keys.book(id), queryFn: () => api.books.get(id), gcTime: 0 })
+
+export const useHighlights = (bookId: number): UseQueryResult<BookHighlight[]> =>
+  useQuery({ queryKey: keys.highlights(bookId), queryFn: () => api.highlights.list(bookId) })
 
 /** Argumentos e retorno de um método da Api, ex.: Method<'tasks', 'update'>. */
 type Method<K extends keyof Api, M extends keyof Api[K]> = Api[K][M] extends (
@@ -120,3 +149,17 @@ export const useToggleCheckin = mutationFor('schedule', 'toggleCheckin', [['chec
 export const useCreateNote = mutationFor('notes', 'create', [keys.notes])
 export const useUpdateNote = mutationFor('notes', 'update', [keys.notes])
 export const useRemoveNote = mutationFor('notes', 'remove', [keys.notes])
+
+export const useCreateFolder = mutationFor('folders', 'create', [keys.folders])
+export const useUpdateFolder = mutationFor('folders', 'update', [keys.folders])
+export const useRemoveFolder = mutationFor('folders', 'remove', [keys.folders, keys.books])
+
+// ['books'] cobre a lista e cada livro (['books', id]).
+export const useAddBooks = mutationFor('books', 'add', [keys.books])
+export const useUpdateBook = mutationFor('books', 'update', [keys.books])
+export const useRelocateBook = mutationFor('books', 'relocate', [keys.books])
+export const useRemoveBook = mutationFor('books', 'remove', [keys.books])
+
+export const useCreateHighlight = mutationFor('highlights', 'create', [['highlights']])
+export const useUpdateHighlight = mutationFor('highlights', 'update', [['highlights']])
+export const useRemoveHighlight = mutationFor('highlights', 'remove', [['highlights']])

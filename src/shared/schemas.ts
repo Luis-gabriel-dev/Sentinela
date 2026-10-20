@@ -122,6 +122,68 @@ export type NoteUpdate = z.input<typeof noteUpdateSchema>
 
 export const noteSearchSchema = z.string().trim().max(200)
 
+// Biblioteca
+
+export const BOOK_FORMATS = ['pdf', 'epub', 'mobi', 'azw3', 'fb2', 'cbz'] as const
+export type BookFormat = (typeof BOOK_FORMATS)[number]
+
+/** Extensão do arquivo → formato. MOBI cobre os .azw/.prc antigos. */
+export const BOOK_EXTENSIONS: Record<string, BookFormat> = {
+  pdf: 'pdf',
+  epub: 'epub',
+  mobi: 'mobi',
+  azw: 'mobi',
+  prc: 'mobi',
+  azw3: 'azw3',
+  kf8: 'azw3',
+  fb2: 'fb2',
+  cbz: 'cbz'
+}
+
+export const HIGHLIGHT_COLORS = ['yellow', 'green', 'blue', 'pink'] as const
+export type HighlightColor = (typeof HIGHLIGHT_COLORS)[number]
+
+const folderFields = { name: z.string().trim().min(1, 'Informe um nome').max(80), color: hexColor }
+export const folderCreateSchema = z.object(folderFields)
+export const folderUpdateSchema = z.object(folderFields).partial()
+export type FolderCreate = z.input<typeof folderCreateSchema>
+export type FolderUpdate = z.input<typeof folderUpdateSchema>
+
+export const bookPathsSchema = z.array(z.string().min(1).max(4096)).max(500)
+
+export const bookUpdateSchema = z
+  .object({
+    title: z.string().trim().min(1, 'Informe um título').max(300),
+    author: optionalText(300),
+    folderId: id.nullable(),
+    topicId: id.nullable(),
+    pageCount: z.number().int().positive().nullable(),
+    metadataReady: z.boolean(),
+    progress: z.number().min(0).max(1),
+    location: z.string().max(20_000).nullable()
+  })
+  .partial()
+export type BookUpdate = z.input<typeof bookUpdateSchema>
+
+export const coverSchema = z
+  .instanceof(Uint8Array)
+  .refine((d) => d.byteLength <= 5 * 1024 * 1024, 'Capa maior que 5 MB')
+
+const highlightFields = {
+  bookId: id,
+  location: z.string().min(1).max(50_000),
+  sortKey: z.number(),
+  text: z.string().max(20_000),
+  color: z.enum(HIGHLIGHT_COLORS),
+  note: optionalText(5000)
+}
+export const highlightCreateSchema = z.object(highlightFields).partial({ color: true, note: true })
+export const highlightUpdateSchema = z
+  .object({ color: highlightFields.color, note: highlightFields.note })
+  .partial()
+export type HighlightCreate = z.input<typeof highlightCreateSchema>
+export type HighlightUpdate = z.input<typeof highlightUpdateSchema>
+
 // Anexos (imagens coladas nas anotações)
 
 export const ATTACHMENT_MIME_TYPES = {

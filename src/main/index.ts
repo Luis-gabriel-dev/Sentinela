@@ -9,14 +9,20 @@ import { createTasksService } from './services/tasks'
 import { createScheduleService } from './services/schedule'
 import { createNotesService } from './services/notes'
 import { createAttachmentsService } from './services/attachments'
+import { createFoldersService } from './services/folders'
+import { createBooksService } from './services/books'
+import { createHighlightsService } from './services/highlights'
+import { createDesktopService } from './desktop'
 import { handleFileProtocol, registerFileScheme } from './protocol'
 
-function createWindow(): BrowserWindow {
-  const mainWindow = new BrowserWindow({
-    width: 1360,
-    height: 860,
-    minWidth: 960,
-    minHeight: 600,
+/** Abre uma janela do app. `route` é a rota da interface (ex.: "/leitor/3"); vazia = início. */
+function createWindow(route = ''): BrowserWindow {
+  const isReader = route.startsWith('/leitor/')
+  const window = new BrowserWindow({
+    width: isReader ? 1000 : 1360,
+    height: isReader ? 900 : 860,
+    minWidth: isReader ? 560 : 960,
+    minHeight: 500,
     show: false,
     autoHideMenuBar: true,
     backgroundColor: '#09090b',
@@ -28,20 +34,20 @@ function createWindow(): BrowserWindow {
     }
   })
 
-  mainWindow.on('ready-to-show', () => mainWindow.show())
+  window.on('ready-to-show', () => window.show())
 
   // Links externos abrem no navegador padrão; o app nunca navega para fora.
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  window.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) shell.openExternal(url)
     return { action: 'deny' }
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    window.loadURL(`${process.env['ELECTRON_RENDERER_URL']}#${route || '/'}`)
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    window.loadFile(join(__dirname, '../renderer/index.html'), { hash: route || '/' })
   }
-  return mainWindow
+  return window
 }
 
 // Datas e horários dos inputs no formato brasileiro (24h, dd/mm/aaaa).
@@ -55,11 +61,12 @@ registerFileScheme()
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
+  let mainWindow: BrowserWindow | null = null
+
   app.on('second-instance', () => {
-    const [win] = BrowserWindow.getAllWindows()
-    if (win) {
-      if (win.isMinimized()) win.restore()
-      win.focus()
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
     }
   })
 
@@ -70,15 +77,22 @@ if (!app.requestSingleInstanceLock()) {
       optimizer.watchWindowShortcuts(window)
     })
 
-    const dbPath = join(app.getPath('userData'), 'sentinela.db')
+    const dataDir = app.getPath('userData')
+    const dbPath = join(dataDir, 'sentinela.db')
     const migrationsFolder = is.dev
       ? join(app.getAppPath(), 'drizzle')
       : join(process.resourcesPath, 'drizzle')
     const { db, close } = openDatabase(dbPath, migrationsFolder)
     app.on('will-quit', close)
 
-    const attachmentsDir = join(app.getPath('userData'), 'attachments')
-    handleFileProtocol(attachmentsDir)
+    const attachmentsDir = join(dataDir, 'attachments')
+    const coversDir = join(dataDir, 'covers')
+    // filePath é só do protocolo; não vai para a API exposta à interface.
+    const { filePath, ...books } = createBooksService(db, coversDir)
+    const pdfjsAssetsDir = is.dev
+      ? join(app.getAppPath(), 'node_modules', 'pdfjs-dist')
+      : join(process.resourcesPath, 'pdfjs')
+    handleFileProtocol({ attachmentsDir, coversDir, pdfjsAssetsDir, bookPath: filePath })
 
     registerApi({
       app: {
@@ -88,13 +102,17 @@ if (!app.requestSingleInstanceLock()) {
       tasks: createTasksService(db),
       schedule: createScheduleService(db),
       notes: createNotesService(db),
-      attachments: createAttachmentsService(attachmentsDir)
+      attachments: createAttachmentsService(attachmentsDir),
+      folders: createFoldersService(db),
+      books,
+      highlights: createHighlightsService(db),
+      desktop: createDesktopService(createWindow)
     })
 
-    createWindow()
+    mainWindow = createWindow()
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+      if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()
     })
   })
 

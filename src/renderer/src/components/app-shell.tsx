@@ -15,6 +15,7 @@ import {
   type LucideIcon
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
+import { ErrorBoundary } from '@renderer/components/error-boundary'
 import { useTheme, type Theme } from '@renderer/lib/theme'
 import { cn } from '@renderer/lib/utils'
 
@@ -34,7 +35,7 @@ const NAV: NavItem[][] = [
   ],
   [
     { to: '/anotacoes', label: 'Anotações', icon: NotebookPen },
-    { to: '/biblioteca', label: 'Biblioteca', icon: Library, soon: true },
+    { to: '/biblioteca', label: 'Biblioteca', icon: Library },
     { to: '/projetos', label: 'Projetos', icon: FolderGit2, soon: true },
     { to: '/mentora', label: 'IA mentora', icon: Sparkles, soon: true }
   ]
@@ -96,11 +97,11 @@ function ThemeSwitcher(): React.JSX.Element {
 }
 
 /** Páginas com layout próprio de tela cheia (painéis), sem o container centralizado. */
-const FULL_BLEED = ['/anotacoes']
+const FULL_BLEED = [/^\/anotacoes/, /^\/biblioteca\/\d+/]
 
 export function AppShell(): React.JSX.Element {
   const { pathname } = useLocation()
-  const fullBleed = FULL_BLEED.some((p) => pathname.startsWith(p))
+  const fullBleed = FULL_BLEED.some((p) => p.test(pathname))
 
   return (
     <div className="flex h-full">
@@ -130,12 +131,16 @@ export function AppShell(): React.JSX.Element {
 
       {fullBleed ? (
         <main className="min-w-0 flex-1">
-          <Outlet />
+          <ErrorBoundary resetKey={pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       ) : (
         <main className="min-w-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-6xl px-8 py-8">
-            <Outlet />
+            <ErrorBoundary resetKey={pathname}>
+              <Outlet />
+            </ErrorBoundary>
           </div>
         </main>
       )}

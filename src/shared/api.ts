@@ -1,6 +1,11 @@
 import type {
   AttachmentInput,
+  BookUpdate,
   DateRange,
+  FolderCreate,
+  FolderUpdate,
+  HighlightCreate,
+  HighlightUpdate,
   NoteCreate,
   NoteUpdate,
   ScheduleBlockCreate,
@@ -12,8 +17,12 @@ import type {
   TopicUpdate
 } from './schemas'
 import type {
+  AddBooksResult,
   AppInfo,
   BlockCheckin,
+  Book,
+  BookHighlight,
+  LibraryFolder,
   Note,
   NoteSearchResult,
   NoteSummary,
@@ -64,9 +73,46 @@ export interface Api {
     /** Salva a imagem na pasta de dados e devolve a URL (sentinela://attachments/...). */
     save(input: AttachmentInput): Promise<string>
   }
+  folders: {
+    list(): Promise<LibraryFolder[]>
+    create(input: FolderCreate): Promise<LibraryFolder>
+    update(id: number, input: FolderUpdate): Promise<LibraryFolder>
+    remove(id: number): Promise<void>
+  }
+  books: {
+    list(): Promise<Book[]>
+    get(id: number): Promise<Book>
+    /** Registra arquivos na biblioteca (sem copiar). */
+    add(paths: string[], folderId?: number | null): Promise<AddBooksResult>
+    update(id: number, input: BookUpdate): Promise<Book>
+    /** Aponta o livro para outro caminho (arquivo movido). */
+    relocate(id: number, path: string): Promise<Book>
+    /** Tira da biblioteca. O arquivo no disco não é apagado. */
+    remove(id: number): Promise<void>
+    /** Salva a capa (JPEG) gerada pela interface. */
+    setCover(id: number, data: Uint8Array): Promise<void>
+    markOpened(id: number): Promise<void>
+  }
+  highlights: {
+    list(bookId: number): Promise<BookHighlight[]>
+    create(input: HighlightCreate): Promise<BookHighlight>
+    update(id: number, input: HighlightUpdate): Promise<BookHighlight>
+    remove(id: number): Promise<void>
+  }
+  desktop: {
+    /** Abre o seletor de arquivos do sistema para livros. Devolve os caminhos escolhidos. */
+    pickBookFiles(multiple: boolean): Promise<string[]>
+    showInFolder(path: string): Promise<void>
+    /** Abre o leitor do livro numa janela própria. */
+    openReaderWindow(bookId: number): Promise<void>
+  }
 }
 
 export const IPC_CHANNEL = 'sentinela:api'
 
-/** Protocolo próprio para servir arquivos locais (anexos, e depois livros) à interface. */
+/** Protocolo próprio para servir arquivos locais (anexos, capas, livros) à interface. */
 export const FILE_PROTOCOL = 'sentinela'
+
+export const bookFileUrl = (id: number): string => `${FILE_PROTOCOL}://books/${id}`
+export const coverUrl = (book: { id: number; coverVersion: number }): string =>
+  `${FILE_PROTOCOL}://covers/${book.id}.jpg?v=${book.coverVersion}`

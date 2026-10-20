@@ -1,0 +1,38 @@
+/* Visualizador do pdf.js integrado ao tema. */
+.sentinela-pdf {
+  --page-margin: 12px auto;
+  --page-border: none;
+}
+
+.sentinela-pdf .pdfViewer .page {
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  border-radius: 2px;
+}
+
+/* Páginas escuras (opção do leitor no tema escuro): inverte as cores mantendo os matizes. */
+.dark .sentinela-pdf.invert-pages .pdfViewer .page .canvasWrapper {
+  filter: invert(0.88) hue-rotate(180deg);
+}
+
+/* Destaques: ficam entre a imagem da página e a camada de texto (seleção continua funcionando). */
+.sentinela-hl-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.sentinela-hl-layer > div {
+  position: absolute;
+  border-radius: 2px;
+  mix-blend-mode: multiply;
+}
+
+.dark .invert-pages .sentinela-hl-layer > div {
+  mix-blend-mode: screen;
+}
+
+/* Resultados da busca do pdf.js */
+.sentinela-pdf .textLayer .highlight {
+  --highlight-bg-color: rgb(99 102 241 / 0.35);
+  --highlight-selected-bg-color: rgb(99 102 241 / 0.7);
+}

@@ -9,8 +9,17 @@ npm install
 npm run dev
 ```
 
-O banco fica em `%APPDATA%\Sentinela\sentinela.db` (o caminho aparece em Configurações), e as
-imagens coladas nas anotações em `%APPDATA%\Sentinela\attachments\`.
+Os dados ficam em `%APPDATA%\Sentinela\` (o caminho do banco aparece em Configurações):
+
+| Caminho        | Conteúdo                                  |
+| -------------- | ----------------------------------------- |
+| `sentinela.db` | Banco SQLite (tudo, exceto arquivos)      |
+| `attachments\` | Imagens coladas nas anotações             |
+| `covers\`      | Capas dos livros, geradas ao adicioná-los |
+
+Os livros **não** são copiados: a biblioteca guarda só o caminho do arquivo. Se um arquivo for
+movido, o livro aparece como "Arquivo não encontrado" e pode ser localizado de novo nos detalhes.
+
 Para usar outra pasta de dados, por exemplo para testes:
 
 ```powershell
@@ -25,6 +34,7 @@ $env:SENTINELA_DATA_DIR = "C:\caminho\de\teste"; npm run dev
 | `npm run typecheck`    | Checa os tipos do processo principal e da interface             |
 | `npm run lint`         | ESLint + Prettier                                               |
 | `npm run db:generate`  | Gera uma migration nova depois de mudar `src/main/db/schema.ts` |
+| `npm run build:unpack` | Gera o app sem instalador em `dist/win-unpacked/`               |
 | `npm run build:win`    | Gera o instalador do Windows em `dist/`                         |
 
 As migrations em `drizzle/` são aplicadas automaticamente quando o app abre.
@@ -40,15 +50,39 @@ src/
 ├── main/              Processo principal (Node)
 │   ├── db/            Schema Drizzle e conexão SQLite
 │   ├── services/      Regras de negócio (sem depender do Electron)
+│   ├── desktop.ts     O que depende do sistema: diálogo de arquivos, Explorer, janelas
 │   ├── ipc.ts         Despacha "namespace.metodo" para os serviços
-│   ├── protocol.ts    Protocolo sentinela:// que serve arquivos locais (anexos)
-│   └── index.ts       Janela, banco e registro da API
-├── preload/           Expõe só window.sentinela.invoke para a interface
+│   ├── protocol.ts    Protocolo sentinela:// que serve arquivos locais
+│   └── index.ts       Janelas, banco e registro da API
+├── preload/           Expõe só window.sentinela (invoke e caminho de arquivo arrastado)
 └── renderer/src/      Interface React
     ├── components/    Layout e componentes compartilhados (ui/ = shadcn)
-    ├── lib/           Cliente da API, hooks do React Query, tema, utilitários
-    └── pages/         Hoje, Agenda, Tarefas, Temas, Anotações, Configurações
+    ├── lib/           Cliente da API, hooks do React Query, tema, pdf.js, foliate-js
+    └── pages/         Hoje, Agenda, Tarefas, Temas, Anotações, Biblioteca, Leitor
 ```
+
+### Protocolo `sentinela://`
+
+A interface não lê o disco direto. Arquivos locais passam pelo protocolo, que só aceita nomes
+validados:
+
+| URL                                   | Origem                                  |
+| ------------------------------------- | --------------------------------------- |
+| `sentinela://attachments/<uuid>.png`  | Imagens das anotações                   |
+| `sentinela://covers/<id>.jpg`         | Capas dos livros                        |
+| `sentinela://books/<id>`              | Arquivo do livro cadastrado com esse id |
+| `sentinela://pdfjs/<pasta>/<arquivo>` | Fontes, cmaps e wasm do pdf.js          |
+
+No app empacotado, os arquivos do pdf.js vão para `resources/pdfjs/` (`extraResources` no
+`electron-builder.yml`); em desenvolvimento, saem de `node_modules/pdfjs-dist/`.
+
+### Leitores
+
+- **PDF**: pdf.js (`PDFViewer`), com camada de texto para selecionar/copiar, busca e destaques
+  desenhados por cima da página (retângulos normalizados por página).
+- **EPUB, MOBI, AZW3, FB2, CBZ**: foliate-js. Destaques guardados como CFI.
+- Livros com DRM (comprados na Amazon, por exemplo) não abrem.
+- O leitor também abre em janela própria (rota `#/leitor/<id>`, sem o menu lateral).
 
 ### Migrations
 
