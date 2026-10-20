@@ -1,0 +1,32 @@
+# Dependências e builds
+node_modules
+dist
+out
+*.tsbuildinfo
+.eslintcache
+
+# Segredos e variáveis de ambiente (chaves de API, tokens do GitHub...)
+.env
+.env.*
+*.pem
+*.key
+
+# Dados locais: bancos SQLite nunca vão pro repositório
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log*
+
+# Sistema e editores
+.DS_Store
+Thumbs.db
+.idea
+.claude/settings.local.json
+
+# Documentos locais (o README é a documentação do repositório)
+guide.md
+projeto.md

@@ -1,0 +1,90 @@
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryKey,
+  type UseMutationResult,
+  type UseQueryResult
+} from '@tanstack/react-query'
+import { toast } from 'sonner'
+import type { Api } from '@shared/api'
+import type { DateRange, TaskFilter } from '@shared/schemas'
+import type { AppInfo, BlockCheckin, ScheduleBlock, Task, Topic } from '@shared/types'
+import { api } from './api'
+
+export const keys = {
+  topics: ['topics'],
+  tasks: (filter?: TaskFilter): QueryKey => ['tasks', filter ?? {}],
+  schedule: ['schedule'],
+  checkins: (range: DateRange): QueryKey => ['checkins', range],
+  appInfo: ['app-info']
+} satisfies Record<string, QueryKey | ((...args: never[]) => QueryKey)>
+
+export const useTopics = (): UseQueryResult<Topic[]> =>
+  useQuery({ queryKey: keys.topics, queryFn: () => api.topics.list() })
+
+export const useTasks = (filter?: TaskFilter): UseQueryResult<Task[]> =>
+  useQuery({ queryKey: keys.tasks(filter), queryFn: () => api.tasks.list(filter) })
+
+export const useSchedule = (): UseQueryResult<ScheduleBlock[]> =>
+  useQuery({ queryKey: keys.schedule, queryFn: () => api.schedule.list() })
+
+export const useCheckins = (range: DateRange | null): UseQueryResult<BlockCheckin[]> =>
+  useQuery({
+    queryKey: keys.checkins(range ?? { from: '', to: '' }),
+    queryFn: () => api.schedule.checkins(range!),
+    enabled: range !== null
+  })
+
+export const useAppInfo = (): UseQueryResult<AppInfo> =>
+  useQuery({ queryKey: keys.appInfo, queryFn: () => api.app.info() })
+
+/** Argumentos e retorno de um método da Api, ex.: Method<'tasks', 'update'>. */
+type Method<K extends keyof Api, M extends keyof Api[K]> = Api[K][M] extends (
+  ...args: infer A
+) => Promise<infer R>
+  ? { args: A; result: R }
+  : never
+
+type ApiMutation<K extends keyof Api, M extends keyof Api[K]> = UseMutationResult<
+  Method<K, M>['result'],
+  Error,
+  Method<K, M>['args']
+>
+
+/**
+ * Cria um hook de mutação para um método da Api. O erro vira um toast e as consultas
+ * afetadas são recarregadas. Uso: update.mutate([id, { completed: true }]).
+ */
+function mutationFor<K extends keyof Api, M extends keyof Api[K]>(
+  namespace: K,
+  method: M,
+  invalidate: QueryKey[]
+): () => ApiMutation<K, M> {
+  return function useApiMutation() {
+    const client = useQueryClient()
+    return useMutation({
+      mutationFn: (args: Method<K, M>['args']) =>
+        (api[namespace][method] as (...a: unknown[]) => Promise<Method<K, M>['result']>)(...args),
+      onError: (error) => toast.error(error.message),
+      onSettled: () =>
+        Promise.all(invalidate.map((queryKey) => client.invalidateQueries({ queryKey })))
+    })
+  }
+}
+
+// Tarefas e agenda referenciam temas, então excluir um tema recarrega tudo.
+const topicDeps = [keys.topics, ['tasks'], keys.schedule]
+
+export const useCreateTopic = mutationFor('topics', 'create', [keys.topics])
+export const useUpdateTopic = mutationFor('topics', 'update', [keys.topics])
+export const useRemoveTopic = mutationFor('topics', 'remove', topicDeps)
+
+export const useCreateTask = mutationFor('tasks', 'create', [['tasks']])
+export const useUpdateTask = mutationFor('tasks', 'update', [['tasks']])
+export const useRemoveTask = mutationFor('tasks', 'remove', [['tasks']])
+
+export const useCreateBlock = mutationFor('schedule', 'create', [keys.schedule])
+export const useUpdateBlock = mutationFor('schedule', 'update', [keys.schedule])
+export const useRemoveBlock = mutationFor('schedule', 'remove', [keys.schedule, ['checkins']])
+export const useToggleCheckin = mutationFor('schedule', 'toggleCheckin', [['checkins']])

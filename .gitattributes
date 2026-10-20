@@ -1,0 +1,6 @@
+# Sempre LF no repositório e no checkout (o Prettier do projeto exige LF)
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.icns binary

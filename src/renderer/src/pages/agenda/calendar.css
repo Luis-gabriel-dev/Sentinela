@@ -1,0 +1,95 @@
+/* Integra o FullCalendar às cores do tema claro/escuro. */
+.fc {
+  --fc-border-color: var(--border);
+  --fc-page-bg-color: var(--card);
+  --fc-neutral-bg-color: var(--muted);
+  --fc-list-event-hover-bg-color: var(--accent);
+  --fc-today-bg-color: color-mix(in oklch, var(--primary) 7%, transparent);
+  --fc-highlight-color: color-mix(in oklch, var(--primary) 20%, transparent);
+  --fc-now-indicator-color: #ef4444;
+  --fc-event-text-color: #fff;
+  --fc-button-text-color: var(--secondary-foreground);
+  --fc-button-bg-color: var(--secondary);
+  --fc-button-border-color: transparent;
+  --fc-button-hover-bg-color: var(--accent);
+  --fc-button-hover-border-color: transparent;
+  --fc-button-active-bg-color: var(--primary);
+  --fc-button-active-border-color: transparent;
+  font-size: 0.8125rem;
+}
+
+.fc .fc-toolbar.fc-header-toolbar {
+  margin-bottom: 1rem;
+}
+
+.fc .fc-toolbar-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.fc .fc-button {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border-radius: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  box-shadow: none !important;
+}
+
+/* Só a primeira letra: "outubro de 2026" → "Outubro de 2026" */
+.fc .fc-toolbar-title::first-letter,
+.fc .fc-button::first-letter,
+.fc .fc-col-header-cell-cushion::first-letter,
+.fc .fc-multimonth-title::first-letter {
+  text-transform: uppercase;
+}
+
+.fc .fc-button-primary:not(:disabled).fc-button-active,
+.fc .fc-button-primary:not(:disabled):active {
+  color: var(--primary-foreground);
+}
+
+.fc .fc-button-group > .fc-button:not(:first-child) {
+  margin-left: 2px;
+}
+
+.fc .fc-col-header-cell-cushion,
+.fc .fc-daygrid-day-number,
+.fc .fc-multimonth-title {
+  color: inherit;
+  text-decoration: none;
+}
+
+.fc .fc-col-header-cell {
+  padding: 0.4rem 0;
+  font-weight: 500;
+}
+
+.fc .fc-timegrid-slot {
+  height: 2.25rem;
+}
+
+.fc .fc-timegrid-slot-label,
+.fc .fc-multimonth-daygrid .fc-col-header-cell {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+
+.fc .fc-timegrid-event,
+.fc .fc-daygrid-block-event {
+  border-radius: 6px;
+  border: none;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+}
+
+.fc .fc-daygrid-dot-event {
+  color: var(--foreground);
+}
+
+.fc .fc-multimonth {
+  border-color: var(--border);
+}
+
+.fc .fc-scrollgrid {
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
