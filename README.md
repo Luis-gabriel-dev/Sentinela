@@ -143,11 +143,22 @@ aparecem no menu "OCR" do leitor.
     política, a própria API repete em outro modelo.
   - **OpenAI**: SDK oficial `openai`, Responses API (`responses.parse` com `zodTextFormat`).
   - **Ollama**: API local (`/api/chat` com `format` = JSON Schema do zod). Sem chave, offline.
+    A janela é fixada em 16 mil tokens (`num_ctx`) com `truncate: false`: por padrão o Ollama
+    usa 4096 e descarta o começo do pedido sem avisar (instruções e dados), e o modelo passa a
+    inventar. Com `truncate: false`, um pedido grande demais vira erro em vez de corte. As listas
+    do primeiro nível do schema levam `minItems: 1`, porque modelos pequenos às vezes devolvem
+    lista vazia.
 - As chaves ficam criptografadas com `safeStorage`; ao salvar, a chave é validada listando os
   modelos (não consome tokens).
 - **Contexto** (`src/main/ai/context.ts`): a conversa recebe um retrato dos estudos (progresso,
-  agenda, tarefas, resultados de exercícios, projetos, títulos das anotações). Exercícios usam o
-  texto das anotações e os destaques dos livros do tema, e reforçam questões erradas antes.
+  agenda, tarefas com atraso já marcado, resultados de exercícios, projetos, títulos das
+  anotações), refeito a cada mensagem. Cada seção tem um teto, para o retrato não crescer sem
+  fim com o uso. Exercícios usam o texto das anotações e os destaques dos livros do tema, e
+  reforçam questões erradas antes.
+- **Orçamento**: cada provedor informa quanto texto aguenta (`maxInputChars`: ~32 mil caracteres
+  no Ollama, 120 mil na nuvem). Da conversa vão as mensagens mais recentes que couberem; quando
+  as antigas ficam de fora, a mentora é avisada para não adivinhar o que foi dito nelas. O
+  material dos exercícios usa até metade do orçamento.
 - Tudo que a IA devolve é conferido em código antes de gravar ou mostrar: tópicos duplicados,
   blocos fora do horário ou em conflito com a agenda, alternativas e índices inválidos.
 - Sugestões de tópicos e de agenda **não são gravadas** sozinhas: a interface mostra e o

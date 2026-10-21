@@ -25,6 +25,16 @@ function startOfWeek(now = new Date()): Date {
 
 const daysAgo = (date: Date): number => Math.floor((Date.now() - date.getTime()) / 86_400_000)
 
+/**
+ * Linhas de uma seção do retrato, com um teto para o retrato não crescer sem fim com o uso
+ * (e não tomar o espaço da conversa). Avisa quantos itens ficaram de fora.
+ */
+function capped<T>(items: T[], max: number, line: (item: T) => string): string[] {
+  const out = items.slice(0, max).map(line)
+  if (items.length > max) out.push(`- … e mais ${items.length - max} não listados`)
+  return out
+}
+
 /** Caminho "Cybersegurança / Redes / TCP" e utilitários da árvore de temas. */
 export function topicTree(db: Db): {
   all: TopicRow[]
@@ -63,20 +73,32 @@ export function studySnapshot(db: Db): string {
   ]
 
   lines.push('', '## Temas e progresso')
-  const tracked = tree.all.filter((t) => t.trackProgress)
-  for (const topic of tracked) {
-    const kids = tree.children(topic.id)
-    const done = kids.filter((k) => k.completedAt)
-    const thisWeek = done.filter((k) => k.completedAt! >= weekStart).length
-    const pending = kids.filter((k) => !k.completedAt).map((k) => k.name)
-    lines.push(
-      `- ${tree.path(topic.id)}: ${done.length}/${kids.length} tópicos concluídos` +
+  // Temas com meta semanal primeiro: são os que a mentora mais precisa acompanhar.
+  const tracked = tree.all
+    .filter((t) => t.trackProgress)
+    .toSorted((a, b) => Number(!!b.weeklyGoal) - Number(!!a.weeklyGoal))
+  lines.push(
+    ...capped(tracked, 40, (topic) => {
+      const kids = tree.children(topic.id)
+      const done = kids.filter((k) => k.completedAt)
+      const thisWeek = done.filter((k) => k.completedAt! >= weekStart).length
+      const pending = kids.filter((k) => !k.completedAt).map((k) => k.name)
+      return (
+        `- ${tree.path(topic.id)}: ${done.length}/${kids.length} tópicos concluídos` +
         (topic.weeklyGoal ? ` (meta ${topic.weeklyGoal}/semana; ${thisWeek} nesta semana)` : '') +
         (pending.length ? `. Pendentes: ${pending.slice(0, 12).join(', ')}` : '')
+      )
+    })
+  )
+  const roots = tree.all.filter((t) => t.parentId === null && !t.trackProgress)
+  if (roots.length) {
+    lines.push(
+      `- Outros temas: ${roots
+        .slice(0, 30)
+        .map((t) => t.name)
+        .join(', ')}`
     )
   }
-  const roots = tree.all.filter((t) => t.parentId === null && !t.trackProgress)
-  if (roots.length) lines.push(`- Outros temas: ${roots.map((t) => t.name).join(', ')}`)
   if (!tracked.length && !roots.length) lines.push('- (nenhum tema cadastrado)')
 
   lines.push('', '## Agenda semanal')
@@ -86,12 +108,15 @@ export function studySnapshot(db: Db): string {
     .toSorted(
       (a, b) => (a.weekday ?? 0) - (b.weekday ?? 0) || a.startTime.localeCompare(b.startTime)
     )
-  for (const b of weekly) {
-    lines.push(
-      `- ${WEEKDAYS[b.weekday ?? 0]} ${b.startTime}–${b.endTime}: ${b.title}` +
+  lines.push(
+    ...capped(
+      weekly,
+      50,
+      (b) =>
+        `- ${WEEKDAYS[b.weekday ?? 0]} ${b.startTime}–${b.endTime}: ${b.title}` +
         (b.topicId ? ` [${tree.path(b.topicId)}]` : '')
     )
-  }
+  )
   if (!weekly.length) lines.push('- (nenhum bloco semanal)')
 
   lines.push('', '## Tarefas abertas')
@@ -101,13 +126,24 @@ export function studySnapshot(db: Db): string {
     .where(isNull(tasks.completedAt))
     .all()
     .toSorted((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999'))
-    .slice(0, 20)
-  for (const t of open) {
-    lines.push(
-      `- ${t.title} (prioridade ${PRIORITY[t.priority]}${t.dueDate ? `, prazo ${t.dueDate}` : ''})` +
+  // Já marca o atraso: modelos pequenos erram ao comparar datas por conta própria.
+  const today = new Date().toLocaleDateString('sv-SE')
+  const due = (date: string): string =>
+    `, prazo ${date}` +
+    (date < today
+      ? ` (ATRASADA há ${daysAgo(new Date(`${date}T00:00`))} dias)`
+      : date === today
+        ? ' (vence hoje)'
+        : '')
+  lines.push(
+    ...capped(
+      open,
+      20,
+      (t) =>
+        `- ${t.title} (prioridade ${PRIORITY[t.priority]}${t.dueDate ? due(t.dueDate) : ''})` +
         (t.topicId ? ` [${tree.path(t.topicId)}]` : '')
     )
-  }
+  )
   if (!open.length) lines.push('- (nenhuma)')
 
   lines.push('', '## Exercícios (últimas listas)')
@@ -128,14 +164,21 @@ export function studySnapshot(db: Db): string {
   if (!sets.length) lines.push('- (nenhuma lista feita ainda)')
 
   lines.push('', '## Projetos de programação (GitHub)')
-  const repos = db.select().from(projects).all()
-  for (const p of repos) {
-    lines.push(
-      `- ${p.repo}: ` +
+  const repos = db
+    .select()
+    .from(projects)
+    .all()
+    .toSorted((a, b) => Number(a.archived) - Number(b.archived))
+  lines.push(
+    ...capped(
+      repos,
+      20,
+      (p) =>
+        `- ${p.repo}: ` +
         (p.lastCommitAt ? `último commit há ${daysAgo(p.lastCommitAt)} dias` : 'sem commits') +
         ` (avisar após ${p.staleDays} dias)${p.archived ? ', arquivado' : ''}`
     )
-  }
+  )
   if (!repos.length) lines.push('- (nenhum projeto acompanhado)')
 
   lines.push('', '## Anotações por tema')
@@ -145,7 +188,15 @@ export function studySnapshot(db: Db): string {
     const key = n.topicId ? tree.path(n.topicId) : 'Sem tema'
     byTopic.set(key, [...(byTopic.get(key) ?? []), n.title.trim() || 'Sem título'])
   }
-  for (const [key, titles] of byTopic) lines.push(`- ${key}: ${titles.slice(0, 15).join('; ')}`)
+  lines.push(
+    ...capped(
+      [...byTopic],
+      30,
+      ([key, titles]) =>
+        `- ${key}: ${titles.slice(0, 10).join('; ')}` +
+        (titles.length > 10 ? ` (e mais ${titles.length - 10})` : '')
+    )
+  )
   if (!byTopic.size) lines.push('- (nenhuma anotação)')
 
   return lines.join('\n')

@@ -379,7 +379,9 @@ export function createMentorService(
         const { topicId, count, difficulty, kinds, focus } = generateExercisesSchema.parse(input)
         const tree = topicTree(db)
         if (!tree.all.some((t) => t.id === topicId)) throw new Error('Tema não encontrado')
-        const material = topicMaterial(db, topicId)
+        const { ai, label } = client()
+        // Metade do orçamento vai para o material; o resto fica para o pedido e a resposta.
+        const material = topicMaterial(db, topicId, Math.floor(ai.maxInputChars / 2))
         const ids = tree.subtreeIds(topicId)
         const wrong = db
           .select({ question: exercises.question })
@@ -422,7 +424,6 @@ export function createMentorService(
           .filter(Boolean)
           .join('\n')
 
-        const { ai, label } = client()
         type Generated = z.infer<typeof exercisesOutput>['exercises'][number]
         type Checked = Omit<Generated, 'options' | 'correct_option'> & {
           options: string[] | null
@@ -517,20 +518,37 @@ export function createMentorService(
           .values({ conversationId: conversation.id, role: 'user', content: text })
           .returning()
           .get()
-        const history = db
+        // O retrato é refeito a cada mensagem, então a mentora sempre vê os dados atuais. Do
+        // histórico vão as mensagens mais recentes que couberem no que sobra do orçamento.
+        const system = `${MENTOR_SYSTEM}\n\n# Retrato atual dos estudos\n\n${studySnapshot(db)}`
+        const all = db
           .select()
           .from(aiMessages)
           .where(eq(aiMessages.conversationId, conversation.id))
           .orderBy(asc(aiMessages.id))
           .all()
-          .slice(-30)
-          .map((m) => ({ role: m.role, content: m.content }))
+        // A última (a pergunta de agora) vai sempre; os 400 são a folga para o aviso de histórico.
+        let used = system.length + text.length + 400
+        let first = all.length - 1
+        while (first > 0 && used + all[first - 1].content.length <= ai.maxInputChars) {
+          first--
+          used += all[first].content.length
+        }
+        // A conversa precisa começar pelo estudante.
+        if (all[first].role === 'assistant') first++
+        const history = all.slice(first).map((m) => ({ role: m.role, content: m.content }))
+        // Sem esse aviso, modelos pequenos inventam o que foi dito nas mensagens que saíram.
+        const omitted = first
+          ? `\n\n# Histórico\n\nAs ${first} mensagens mais antigas desta conversa não cabem mais e ` +
+            'não aparecem abaixo. Se o estudante perguntar algo dito nelas, diga que esse trecho ' +
+            'já saiu do seu histórico e peça para ele repetir. Nunca tente adivinhar.'
+          : ''
 
         const emit = (event: AiStreamEvent): void => broadcast(AI_STREAM_CHANNEL, event)
         let reply: string
         try {
           reply = await ai.chat({
-            system: `${MENTOR_SYSTEM}\n\n# Retrato atual dos estudos\n\n${studySnapshot(db)}`,
+            system: system + omitted,
             messages: history,
             onDelta: (delta) =>
               emit({ conversationId: conversation.id, type: 'delta', text: delta })

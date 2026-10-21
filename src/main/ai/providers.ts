@@ -12,6 +12,11 @@ export interface ChatTurn {
 
 /** O que o Sentinela precisa de qualquer provedor de IA. */
 export interface AiClient {
+  /**
+   * Quanto texto (em caracteres) dá para mandar num pedido e ainda sobrar espaço para a
+   * resposta. Histórico da conversa e material dos exercícios são cortados para caber nisso.
+   */
+  maxInputChars: number
   /** Resposta estruturada, validada pelo schema. */
   generate<T>(request: {
     system: string
@@ -35,6 +40,9 @@ export const DEFAULT_MODELS: Record<AiProvider, string> = {
   openai: 'gpt-5',
   ollama: 'llama3.2'
 }
+
+// Claude e GPT aguentam bem mais, mas pedidos enormes custam caro e não melhoram a resposta.
+const CLOUD_MAX_INPUT_CHARS = 120_000
 
 // ---------------------------------------------------------------- Anthropic (Claude)
 
@@ -77,6 +85,8 @@ function anthropicClient(apiKey: string, model: string): AiClient {
   }
 
   return {
+    maxInputChars: CLOUD_MAX_INPUT_CHARS,
+
     async generate({ system, prompt, schema }) {
       try {
         const response = await client.beta.messages.parse({
@@ -159,6 +169,8 @@ function openaiError(error: unknown): Error {
 function openaiClient(apiKey: string, model: string): AiClient {
   const client = new OpenAI({ apiKey })
   return {
+    maxInputChars: CLOUD_MAX_INPUT_CHARS,
+
     async generate({ system, prompt, schema, name }) {
       try {
         const response = await client.responses.parse({
@@ -215,6 +227,17 @@ function openaiClient(apiKey: string, model: string): AiClient {
 
 // ---------------------------------------------------------------- Ollama (local)
 
+// O Ollama carrega os modelos com 4096 tokens e, se o pedido passar disso, descarta o começo
+// (instruções e dados do estudante) sem avisar, e o modelo passa a inventar. Por isso a janela é
+// fixada aqui (trocar a cada pedido faria o Ollama recarregar o modelo) e o corte é desligado.
+const OLLAMA_CONTEXT = 16_384
+// ~10 mil tokens em português, sobrando ~6 mil para a resposta.
+const OLLAMA_MAX_INPUT_CHARS = 32_000
+const ollamaOptions = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+  truncate: false,
+  options: { num_ctx: OLLAMA_CONTEXT, ...extra }
+})
+
 // A gramática do Ollama deixa o modelo fechar a lista logo de cara, e modelos pequenos fazem
 // isso com frequência. Exigir ao menos um item nas listas do primeiro nível evita a resposta vazia.
 function ollamaFormat(schema: z.ZodType): Record<string, unknown> {
@@ -246,17 +269,28 @@ function ollamaClient(baseUrl: string, model: string): AiClient {
         `O modelo "${model}" não está instalado no Ollama (rode: ollama pull ${model})`
       )
     }
-    if (!response.ok) throw new AiError(`O Ollama respondeu com erro ${response.status}`)
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '')
+      if (detail.includes('exceed_context_size')) {
+        throw new AiError(
+          'O pedido ficou grande demais para o modelo local. Comece uma conversa nova ou use ' +
+            'menos material.'
+        )
+      }
+      throw new AiError(`O Ollama respondeu com erro ${response.status}`)
+    }
     return response
   }
 
   return {
+    maxInputChars: OLLAMA_MAX_INPUT_CHARS,
+
     async generate({ system, prompt, schema }) {
       const response = await post('/api/chat', {
         model,
         stream: false,
         format: ollamaFormat(schema),
-        options: { temperature: 0.4 },
+        ...ollamaOptions({ temperature: 0.4 }),
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: prompt }
@@ -276,6 +310,7 @@ function ollamaClient(baseUrl: string, model: string): AiClient {
       const response = await post('/api/chat', {
         model,
         stream: true,
+        ...ollamaOptions(),
         messages: [{ role: 'system', content: system }, ...messages]
       })
       // Resposta em NDJSON: um objeto JSON por linha.
