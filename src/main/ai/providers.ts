@@ -215,6 +215,18 @@ function openaiClient(apiKey: string, model: string): AiClient {
 
 // ---------------------------------------------------------------- Ollama (local)
 
+// A gramática do Ollama deixa o modelo fechar a lista logo de cara, e modelos pequenos fazem
+// isso com frequência. Exigir ao menos um item nas listas do primeiro nível evita a resposta vazia.
+function ollamaFormat(schema: z.ZodType): Record<string, unknown> {
+  const json = z.toJSONSchema(schema) as {
+    properties?: Record<string, { type?: string; minItems?: number }>
+  }
+  for (const prop of Object.values(json.properties ?? {})) {
+    if (prop.type === 'array') prop.minItems = Math.max(prop.minItems ?? 0, 1)
+  }
+  return json
+}
+
 function ollamaClient(baseUrl: string, model: string): AiClient {
   const base = baseUrl.replace(/\/+$/, '')
 
@@ -243,7 +255,7 @@ function ollamaClient(baseUrl: string, model: string): AiClient {
       const response = await post('/api/chat', {
         model,
         stream: false,
-        format: z.toJSONSchema(schema),
+        format: ollamaFormat(schema),
         options: { temperature: 0.4 },
         messages: [
           { role: 'system', content: system },

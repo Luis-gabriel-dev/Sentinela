@@ -65,6 +65,9 @@ const DIFFICULTY_TEXT = {
   hard: 'difícil (análise, casos menos óbvios, combinar conceitos)'
 } as const
 
+// A IA devolve o nome do dia; modelos pequenos erram a conversão para número (0 = domingo).
+const WEEKDAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'] as const
+
 // Formatos pedidos à IA (saída estruturada). Faixas e regras são conferidas depois em código.
 const topicsOutput = z.object({
   topics: z.array(
@@ -80,7 +83,7 @@ const scheduleOutput = z.object({
     z.object({
       title: z.string().describe('O que estudar no bloco, curto'),
       topic_id: z.number().int().describe('Um dos ids de tema informados'),
-      weekday: z.number().int().describe('0 = domingo, 1 = segunda ... 6 = sábado'),
+      weekday: z.enum(WEEKDAYS).describe('Dia da semana do bloco'),
       start_time: z.string().describe('Início, HH:MM 24h'),
       end_time: z.string().describe('Fim, HH:MM 24h'),
       reason: z.string().describe('Por que este bloco, em uma frase')
@@ -104,6 +107,13 @@ const exercisesOutput = z.object({
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
 const toMinutes = (t: string): number => Number(t.slice(0, 2)) * 60 + Number(t.slice(3))
+
+// Modelos pequenos (Ollama) às vezes devolvem uma lista vazia. Pede de novo antes de desistir.
+async function untilNotEmpty<T>(attempt: () => Promise<T[]>, tries = 3): Promise<T[]> {
+  let out: T[] = []
+  for (let i = 0; i < tries && !out.length; i++) out = await attempt()
+  return out
+}
 
 type ExerciseRow = typeof exercises.$inferSelect
 
@@ -263,19 +273,21 @@ export function createMentorService(
           .join('\n')
 
         const { ai } = client()
-        const result = await ai.generate({
-          system: BASE_SYSTEM,
-          prompt,
-          schema: topicsOutput,
-          name: 'topicos'
+        return untilNotEmpty(async () => {
+          const result = await ai.generate({
+            system: BASE_SYSTEM,
+            prompt,
+            schema: topicsOutput,
+            name: 'topicos'
+          })
+          const seen = new Set(existing.map((n) => n.toLowerCase()))
+          return result.topics
+            .map((t) => ({ name: t.name.trim().slice(0, 120), description: t.description.trim() }))
+            .filter(
+              (t) => t.name && !seen.has(t.name.toLowerCase()) && seen.add(t.name.toLowerCase())
+            )
+            .slice(0, 15)
         })
-        const seen = new Set(existing.map((n) => n.toLowerCase()))
-        return result.topics
-          .map((t) => ({ name: t.name.trim().slice(0, 120), description: t.description.trim() }))
-          .filter(
-            (t) => t.name && !seen.has(t.name.toLowerCase()) && seen.add(t.name.toLowerCase())
-          )
-          .slice(0, 15)
       },
 
       async suggestSchedule(input) {
@@ -298,7 +310,6 @@ export function createMentorService(
         })
         const existing = db.select().from(scheduleBlocks).all()
         const weekly = existing.filter((b) => b.recurrence === 'weekly')
-        const days = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
 
         const prompt = [
           'Monte uma agenda semanal de estudos recorrente.',
@@ -311,22 +322,14 @@ export function createMentorService(
           weekly.length
             ? 'Blocos que já existem na agenda (não sobreponha):\n' +
               weekly
-                .map((b) => `- ${days[b.weekday ?? 0]} ${b.startTime}–${b.endTime}: ${b.title}`)
+                .map((b) => `- ${WEEKDAYS[b.weekday ?? 0]} ${b.startTime}–${b.endTime}: ${b.title}`)
                 .join('\n')
             : 'A agenda está vazia.',
           '',
-          'Regras: weekday 0 = domingo ... 6 = sábado; horários HH:MM no formato 24h; cada bloco ' +
-            'entre 45 minutos e 3 horas; respeite a disponibilidade; dê mais tempo a quem tem mais ' +
-            'pendências ou meta semanal; title curto dizendo o que estudar no bloco.'
+          'Regras: use só os dias e horários que o estudante citou na disponibilidade; horários ' +
+            'HH:MM no formato 24h; cada bloco entre 45 minutos e 3 horas; dê mais tempo a quem ' +
+            'tem mais pendências ou meta semanal; title curto dizendo o que estudar no bloco.'
         ].join('\n')
-
-        const { ai } = client()
-        const result = await ai.generate({
-          system: BASE_SYSTEM,
-          prompt,
-          schema: scheduleOutput,
-          name: 'agenda'
-        })
 
         const valid = new Set(chosen.map((t) => t.id))
         const overlaps = (weekday: number, start: number, end: number): boolean =>
@@ -334,32 +337,42 @@ export function createMentorService(
             (b) =>
               b.weekday === weekday && start < toMinutes(b.endTime) && end > toMinutes(b.startTime)
           )
-        const out: ScheduleSuggestion[] = []
-        for (const b of result.blocks) {
-          if (!Number.isInteger(b.weekday) || b.weekday < 0 || b.weekday > 6) continue
-          if (!TIME.test(b.start_time) || !TIME.test(b.end_time)) continue
-          const start = toMinutes(b.start_time)
-          const end = toMinutes(b.end_time)
-          if (end <= start || overlaps(b.weekday, start, end)) continue
-          if (
-            out.some(
-              (o) =>
-                o.weekday === b.weekday &&
-                start < toMinutes(o.endTime) &&
-                end > toMinutes(o.startTime)
-            )
-          )
-            continue
-          out.push({
-            title: b.title.trim().slice(0, 200) || 'Estudo',
-            topicId: valid.has(b.topic_id) ? b.topic_id : null,
-            weekday: b.weekday,
-            startTime: b.start_time,
-            endTime: b.end_time,
-            reason: b.reason.trim()
+        const { ai } = client()
+        return untilNotEmpty(async () => {
+          const result = await ai.generate({
+            system: BASE_SYSTEM,
+            prompt,
+            schema: scheduleOutput,
+            name: 'agenda'
           })
-        }
-        return out.slice(0, 28)
+          const out: ScheduleSuggestion[] = []
+          for (const b of result.blocks) {
+            const weekday = WEEKDAYS.indexOf(b.weekday)
+            if (weekday < 0) continue
+            if (!TIME.test(b.start_time) || !TIME.test(b.end_time)) continue
+            const start = toMinutes(b.start_time)
+            const end = toMinutes(b.end_time)
+            if (end <= start || overlaps(weekday, start, end)) continue
+            if (
+              out.some(
+                (o) =>
+                  o.weekday === weekday &&
+                  start < toMinutes(o.endTime) &&
+                  end > toMinutes(o.startTime)
+              )
+            )
+              continue
+            out.push({
+              title: b.title.trim().slice(0, 200) || 'Estudo',
+              topicId: valid.has(b.topic_id) ? b.topic_id : null,
+              weekday,
+              startTime: b.start_time,
+              endTime: b.end_time,
+              reason: b.reason.trim()
+            })
+          }
+          return out.slice(0, 28)
+        })
       },
 
       async generateExercises(input) {
@@ -410,38 +423,46 @@ export function createMentorService(
           .join('\n')
 
         const { ai, label } = client()
-        const result = await ai.generate({
-          system: BASE_SYSTEM,
-          prompt,
-          schema: exercisesOutput,
-          name: 'exercicios'
-        })
-
-        // Confere o que veio: alternativas, índice da correta e tipos pedidos.
-        type Checked = Omit<(typeof result.exercises)[number], 'options' | 'correct_option'> & {
+        type Generated = z.infer<typeof exercisesOutput>['exercises'][number]
+        type Checked = Omit<Generated, 'options' | 'correct_option'> & {
           options: string[] | null
           correct_option: number | null
         }
-        const items = result.exercises
-          .filter((e) => kinds.includes(e.kind) && e.question.trim())
-          .flatMap((e): Checked[] => {
-            if (e.kind === 'open') {
-              return [{ ...e, options: null, correct_option: null }]
-            }
-            const options = e.options.map((o) => o.trim()).filter(Boolean)
-            if (options.length < 2 || e.correct_option < 0 || e.correct_option >= options.length) {
-              return []
-            }
-            return [{ ...e, options, correct_option: e.correct_option }]
+        let title = ''
+        const items = await untilNotEmpty(async () => {
+          const result = await ai.generate({
+            system: BASE_SYSTEM,
+            prompt,
+            schema: exercisesOutput,
+            name: 'exercicios'
           })
-          .slice(0, count)
+          title = result.title
+          // Confere o que veio: alternativas, índice da correta e tipos pedidos.
+          return result.exercises
+            .filter((e) => kinds.includes(e.kind) && e.question.trim())
+            .flatMap((e): Checked[] => {
+              if (e.kind === 'open') {
+                return [{ ...e, options: null, correct_option: null }]
+              }
+              const options = e.options.map((o) => o.trim()).filter(Boolean)
+              if (
+                options.length < 2 ||
+                e.correct_option < 0 ||
+                e.correct_option >= options.length
+              ) {
+                return []
+              }
+              return [{ ...e, options, correct_option: e.correct_option }]
+            })
+            .slice(0, count)
+        })
         if (!items.length) throw new Error('A IA não gerou exercícios válidos. Tente de novo.')
 
         const set = db
           .insert(exerciseSets)
           .values({
             topicId,
-            title: result.title.trim().slice(0, 200) || `Exercícios: ${tree.path(topicId)}`,
+            title: title.trim().slice(0, 200) || `Exercícios: ${tree.path(topicId)}`,
             difficulty,
             generatedBy: label
           })
