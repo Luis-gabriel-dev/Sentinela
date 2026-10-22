@@ -4,7 +4,13 @@ import { ArrowRight, TriangleAlert } from 'lucide-react'
 import { AgendaIcon, ProjectsIcon, TasksIcon, TopicsIcon } from '@renderer/components/icons'
 import { Checkbox } from '@renderer/components/ui/checkbox'
 import { Progress } from '@renderer/components/ui/progress'
-import { compareTasks, formatDate, PRIORITY_META, todayIso } from '@renderer/lib/format'
+import {
+  compareTasks,
+  DEFAULT_COLOR,
+  formatDate,
+  PRIORITY_META,
+  todayIso
+} from '@renderer/lib/format'
 import { projectHealth } from '@renderer/lib/projects'
 import {
   useCheckins,
@@ -116,7 +122,7 @@ export function TodayPage(): React.JSX.Element {
               const color =
                 b.color ??
                 (b.topicId !== null ? topicsById.get(b.topicId)?.color : null) ??
-                '#6366f1'
+                DEFAULT_COLOR
               return (
                 <label
                   key={b.id}

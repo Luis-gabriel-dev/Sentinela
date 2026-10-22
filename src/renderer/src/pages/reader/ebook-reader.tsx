@@ -41,7 +41,7 @@ const bookCss = (dark: boolean, fontSize: number): string => `
   html { color-scheme: ${dark ? 'dark' : 'light'}; font-size: ${fontSize}% !important; }
   body { color: ${dark ? '#e4e4e7' : '#1f1f23'} !important; background: transparent !important; }
   p, li, blockquote, dd { line-height: 1.6; text-align: start; hyphens: auto; }
-  a:link, a:visited { color: ${dark ? '#a5b4fc' : '#4f46e5'}; }
+  a:link, a:visited { color: ${dark ? '#fdba74' : '#c2410c'}; }
   pre { white-space: pre-wrap !important; }
   img, svg { max-width: 100%; height: auto; }
   ${dark ? 'img { filter: brightness(.9); }' : ''}

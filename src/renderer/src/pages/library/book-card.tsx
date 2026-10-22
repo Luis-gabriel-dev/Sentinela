@@ -13,6 +13,7 @@ import {
 } from '@renderer/components/ui/dropdown-menu'
 import { api } from '@renderer/lib/api'
 import { FORMAT_LABEL } from '@renderer/lib/books'
+import { DEFAULT_COLOR } from '@renderer/lib/format'
 import { cn } from '@renderer/lib/utils'
 
 /** Capa do livro, ou uma capa gerada com título e cor quando o arquivo não tem. */
@@ -36,7 +37,7 @@ export function BookCover({
       />
     )
   }
-  const color = folder?.color ?? '#6366f1'
+  const color = folder?.color ?? DEFAULT_COLOR
   return (
     <div
       className={cn('flex size-full flex-col justify-between p-3 text-white', className)}

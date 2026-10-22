@@ -41,12 +41,12 @@
 }
 
 .sentinela-pdf .textLayer .ocr-line.ocr-hit {
-  background: rgb(99 102 241 / 0.45);
+  background: rgb(249 115 22 / 0.45);
   border-radius: 2px;
 }
 
 /* Resultados da busca do pdf.js */
 .sentinela-pdf .textLayer .highlight {
-  --highlight-bg-color: rgb(99 102 241 / 0.35);
-  --highlight-selected-bg-color: rgb(99 102 241 / 0.7);
+  --highlight-bg-color: rgb(249 115 22 / 0.35);
+  --highlight-selected-bg-color: rgb(249 115 22 / 0.7);
 }

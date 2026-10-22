@@ -1,7 +1,7 @@
 import { Check, Pipette } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@renderer/components/ui/popover'
-import { COLOR_PRESETS } from '@renderer/lib/format'
+import { COLOR_PRESETS, DEFAULT_COLOR } from '@renderer/lib/format'
 import { cn } from '@renderer/lib/utils'
 
 interface Props {
@@ -16,7 +16,7 @@ export function ColorPicker({
   value,
   onChange,
   noneLabel,
-  fallback = '#6366f1'
+  fallback = DEFAULT_COLOR
 }: Props): React.JSX.Element {
   const shown = value ?? fallback
 

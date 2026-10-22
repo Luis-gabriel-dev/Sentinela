@@ -38,12 +38,15 @@ export function compareTasks(a: Task, b: Task): number {
 
 export const noteTitle = (title: string): string => title.trim() || 'Sem título'
 
+/** Cor de quem não tem cor escolhida (bloco sem tema, pasta sem cor): o laranja do app. */
+export const DEFAULT_COLOR = '#f97316'
+
 export const COLOR_PRESETS = [
+  '#f97316',
   '#6366f1',
   '#8b5cf6',
   '#ec4899',
   '#ef4444',
-  '#f97316',
   '#eab308',
   '#22c55e',
   '#14b8a6',

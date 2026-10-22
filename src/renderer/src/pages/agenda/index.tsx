@@ -19,14 +19,12 @@ import type { DateRange } from '@shared/schemas'
 import type { ScheduleBlock } from '@shared/types'
 import { Button } from '@renderer/components/ui/button'
 import { PageHeader } from '@renderer/components/page-header'
-import { toIsoDate, toTime } from '@renderer/lib/format'
+import { DEFAULT_COLOR, toIsoDate, toTime } from '@renderer/lib/format'
 import { useCheckins, useSchedule, useTopics, useUpdateBlock } from '@renderer/lib/queries'
 import { cn } from '@renderer/lib/utils'
 import { BlockDialog, type BlockDraft } from './block-dialog'
 import { SuggestScheduleDialog } from './suggest-schedule-dialog'
 import './calendar.css'
-
-const DEFAULT_COLOR = '#6366f1'
 
 type DialogState =
   | { open: false }
