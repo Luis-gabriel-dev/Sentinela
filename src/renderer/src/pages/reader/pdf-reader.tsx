@@ -105,6 +105,7 @@ function mergeLineRects(rects: DOMRect[]): DOMRect[] {
 
 export function PdfReader({
   book,
+  startLocation,
   highlights,
   onPosition,
   onSelection,
@@ -244,7 +245,7 @@ export function PdfReader({
         setNumPages(pdf.numPages)
         void pdfHasText(pdf).then((hasText) => !cancelled && setScanned(!hasText))
 
-        const saved = parseLocation<PdfLocation>(book.location)
+        const saved = parseLocation<PdfLocation>(startLocation ?? book.location)
         eventBus.on('pagesinit', () => {
           viewer.currentScaleValue = saved?.scale ?? 'page-width'
           if (saved) {

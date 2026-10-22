@@ -6,6 +6,7 @@ import type {
   ExerciseResult,
   HighlightColor,
   Priority,
+  RagKind,
   Recurrence
 } from './schemas'
 
@@ -247,11 +248,41 @@ export interface ExerciseSet extends ExerciseSetSummary {
   exercises: Exercise[]
 }
 
+/** Um modelo disponível no provedor. Os campos opcionais só vêm do Ollama. */
+export interface ModelInfo {
+  name: string
+  /** chat = conversa e geração de texto; embedding = só para a busca inteligente. */
+  kind: 'chat' | 'embedding'
+  /** "7.6B" */
+  parameterSize?: string
+  quantization?: string
+  /** Tamanho em bytes. */
+  size?: number
+  contextLength?: number
+  vision?: boolean
+}
+
 export interface Conversation {
   id: number
   title: string
+  /** Resumo das mensagens até `summaryUntil` (a conversa foi compactada). */
+  summary: string | null
+  summaryUntil: number | null
+  compactedAt: Date | null
   createdAt: Date
   updatedAt: Date
+}
+
+/** Trecho que a busca inteligente achou e entregou à IA. `n` é o número citado como [n]. */
+export interface RagSource {
+  n: number
+  kind: RagKind
+  /** Id da anotação (note) ou do livro (highlight, ocr). */
+  sourceId: number
+  highlightId: number | null
+  page: number | null
+  title: string
+  excerpt: string
 }
 
 export interface ChatMessage {
@@ -259,7 +290,16 @@ export interface ChatMessage {
   conversationId: number
   role: 'user' | 'assistant'
   content: string
+  sources: RagSource[] | null
   createdAt: Date
+}
+
+/** Quanto do contexto do modelo a conversa já ocupa (aproximado, em caracteres). */
+export interface ContextUsage {
+  used: number
+  max: number
+  /** Mensagens que ainda vão inteiras (as anteriores estão no resumo). */
+  liveMessages: number
 }
 
 /** Evento de streaming da resposta da mentora (canal AI_STREAM_CHANNEL). */
@@ -267,6 +307,30 @@ export type AiStreamEvent =
   | { conversationId: number; type: 'delta'; text: string }
   /** Texto final consolidado (substitui o que foi recebido aos pedaços). */
   | { conversationId: number; type: 'done'; text: string }
+  /** Etapa antes da resposta (ex.: compactando a conversa). */
+  | { conversationId: number; type: 'status'; text: string }
+
+export interface RagSettings {
+  enabled: boolean
+  /** Escolhido pelo estudante; null = automático. */
+  embedModel: string | null
+}
+
+export interface RagStatus extends RagSettings {
+  /** Modelo em uso de fato (null = nenhum modelo de embedding disponível). */
+  activeModel: string | null
+  chunks: number
+  embedded: number
+  sources: { notes: number; highlights: number; ocrPages: number }
+  running: boolean
+  /** Por que a busca está só por palavras (Ollama fora do ar, sem modelo de embedding...). */
+  problem: string | null
+}
+
+/** Resultado da busca inteligente mostrado na interface. */
+export interface RagHit extends Omit<RagSource, 'n'> {
+  score: number
+}
 
 export interface AppInfo {
   version: string

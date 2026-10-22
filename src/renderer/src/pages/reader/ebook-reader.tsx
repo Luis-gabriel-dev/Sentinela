@@ -62,6 +62,7 @@ function flattenToc(items?: TocItem[] | null, depth = 0): (TocItem & { depth: nu
 
 export function EbookReader({
   book,
+  startLocation,
   highlights,
   onPosition,
   onSelection,
@@ -156,7 +157,8 @@ export function EbookReader({
         view.renderer.setAttribute('max-inline-size', '720px')
         view.renderer.setAttribute('gap', '6%')
         view.renderer.setStyles?.(bookCss(resolved === 'dark', prefs.fontSize))
-        await view.init({ lastLocation: book.location, showTextStart: !book.location })
+        const location = startLocation ?? book.location
+        await view.init({ lastLocation: location, showTextStart: !location })
         if (!cancelled) setReady(true)
       } catch (e) {
         if (!cancelled) setError((e as Error).message || 'formato não suportado ou protegido')

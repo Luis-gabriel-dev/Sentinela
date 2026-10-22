@@ -1,4 +1,5 @@
 import {
+  blob,
   index,
   integer,
   primaryKey,
@@ -15,6 +16,7 @@ import {
   EXERCISE_RESULTS,
   HIGHLIGHT_COLORS,
   PRIORITIES,
+  RAG_KINDS,
   RECURRENCES
 } from '../../shared/schemas'
 
@@ -214,10 +216,17 @@ export const projects = sqliteTable('projects', {
   ...timestamps
 })
 
-/** Conversas com a IA mentora. */
+/**
+ * Conversas com a IA mentora. Quando a conversa é compactada (pelo estudante ou porque não cabia
+ * mais), `summary` resume tudo até a mensagem `summaryUntil` (id); dali para trás, a IA recebe só
+ * o resumo.
+ */
 export const aiConversations = sqliteTable('ai_conversations', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   title: text('title').notNull(),
+  summary: text('summary'),
+  summaryUntil: integer('summary_until'),
+  compactedAt: integer('compacted_at', { mode: 'timestamp_ms' }),
   ...timestamps
 })
 
@@ -230,6 +239,8 @@ export const aiMessages = sqliteTable(
       .references(() => aiConversations.id, { onDelete: 'cascade' }),
     role: text('role', { enum: ['user', 'assistant'] }).notNull(),
     content: text('content').notNull(),
+    /** JSON com os trechos (RagSource[]) que a busca inteligente entregou para esta resposta. */
+    sources: text('sources'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
       .$defaultFn(() => new Date())
@@ -271,6 +282,39 @@ export const exercises = sqliteTable(
   },
   (t) => [index('exercises_set_idx').on(t.setId)]
 )
+
+/**
+ * Índice da busca inteligente (RAG): anotações, destaques e páginas de OCR cortados em trechos.
+ * `sourceKey` diz de onde veio o trecho ("note:3", "highlight:8", "ocr:2:15"). `embedding` é o
+ * vetor (Float32 normalizado) calculado pelo `embedModel`, ou null enquanto não foi calculado. O
+ * texto também vai para a FTS5 `rag_chunks_fts` (migration manual): a busca usa as duas coisas.
+ */
+export const ragChunks = sqliteTable(
+  'rag_chunks',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    sourceKey: text('source_key').notNull(),
+    kind: text('kind', { enum: RAG_KINDS }).notNull(),
+    /** Id da anotação (note) ou do livro (highlight, ocr). */
+    sourceId: integer('source_id').notNull(),
+    highlightId: integer('highlight_id'),
+    page: integer('page'),
+    topicId: integer('topic_id'),
+    /** Nome para mostrar: título da anotação ou do livro. */
+    title: text('title').notNull(),
+    position: integer('position').notNull(),
+    text: text('text').notNull(),
+    embedding: blob('embedding', { mode: 'buffer' }),
+    embedModel: text('embed_model')
+  },
+  (t) => [index('rag_chunks_source_idx').on(t.sourceKey)]
+)
+
+/** O que já está no índice: uma linha por origem, com a impressão digital do conteúdo. */
+export const ragSources = sqliteTable('rag_sources', {
+  sourceKey: text('source_key').primaryKey(),
+  fingerprint: text('fingerprint').notNull()
+})
 
 /** Configurações gerais (chave → JSON). */
 export const settings = sqliteTable('settings', {

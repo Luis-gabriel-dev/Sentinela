@@ -204,15 +204,23 @@ export function studySnapshot(db: Db): string {
 
 /**
  * Material de estudo de um tema (e subtemas): texto das anotações e destaques dos livros
- * ligados a ele. Limitado para caber bem no pedido.
+ * ligados a ele, até `maxChars`. `complete` diz se coube tudo.
  */
-export function topicMaterial(db: Db, topicId: number, maxChars = 24_000): string {
+export function topicMaterial(
+  db: Db,
+  topicId: number,
+  maxChars: number
+): { text: string; complete: boolean } {
   const tree = topicTree(db)
   const ids = tree.subtreeIds(topicId)
   const parts: string[] = []
   let size = 0
+  let complete = true
   const push = (text: string): boolean => {
-    if (size + text.length > maxChars) return false
+    if (size + text.length > maxChars) {
+      complete = false
+      return false
+    }
     parts.push(text)
     size += text.length
     return true
@@ -236,5 +244,5 @@ export function topicMaterial(db: Db, topicId: number, maxChars = 24_000): strin
     const text = hl.map((h) => `- "${h.text}"${h.note ? ` (nota: ${h.note})` : ''}`).join('\n')
     if (!push(`### Destaques do livro "${book.title}"\n${text}\n`)) break
   }
-  return parts.join('\n')
+  return { text: parts.join('\n'), complete }
 }

@@ -15,6 +15,7 @@ import { createHighlightsService } from './services/highlights'
 import { createOcrService } from './services/ocr'
 import { createGithubService } from './services/github'
 import { createMentorService } from './services/mentor'
+import { createRagService } from './ai/rag'
 import type { Secrets } from './secrets'
 import { createDesktopService } from './desktop'
 import { handleFileProtocol, registerFileScheme } from './protocol'
@@ -113,23 +114,39 @@ if (!app.requestSingleInstanceLock()) {
       for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload)
     }
 
-    registerApi({
-      app: {
-        info: async () => ({ version: app.getVersion(), dbPath })
+    const rag = createRagService(db)
+
+    registerApi(
+      {
+        app: {
+          info: async () => ({ version: app.getVersion(), dbPath })
+        },
+        topics: createTopicsService(db),
+        tasks: createTasksService(db),
+        schedule: createScheduleService(db),
+        notes: createNotesService(db),
+        attachments: createAttachmentsService(attachmentsDir),
+        folders: createFoldersService(db),
+        books,
+        highlights: createHighlightsService(db),
+        ocr,
+        ...createGithubService(db, secrets),
+        ...createMentorService(db, secrets, broadcast, rag.index),
+        rag: rag.api,
+        desktop: createDesktopService(createWindow)
       },
-      topics: createTopicsService(db),
-      tasks: createTasksService(db),
-      schedule: createScheduleService(db),
-      notes: createNotesService(db),
-      attachments: createAttachmentsService(attachmentsDir),
-      folders: createFoldersService(db),
-      books,
-      highlights: createHighlightsService(db),
-      ocr,
-      ...createGithubService(db, secrets),
-      ...createMentorService(db, secrets, broadcast),
-      desktop: createDesktopService(createWindow)
-    })
+      (path) => {
+        // O que muda anotações, destaques, OCR ou livros/temas (títulos, tema do livro) entra na
+        // busca inteligente alguns segundos depois.
+        if (
+          /^(notes|highlights|ocr|books|topics)\.(create|update|remove|recognizePage|clear)$/.test(
+            path
+          )
+        ) {
+          rag.index.scheduleSync()
+        }
+      }
+    )
 
     mainWindow = createWindow()
 

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useParams, useSearchParams } from 'react-router'
 import { AppWindow, ArrowLeft, FileQuestion } from 'lucide-react'
 import { HighlightIcon } from '@renderer/components/icons'
 import type { HighlightColor } from '@shared/schemas'
-import type { BookHighlight } from '@shared/types'
+import type { Book, BookHighlight } from '@shared/types'
 import { Button } from '@renderer/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 import { EmptyState } from '@renderer/components/page-header'
@@ -20,6 +20,20 @@ import './reader.css'
 
 const PANEL_KEY = 'sentinela:highlights-panel'
 
+/** Posição de abertura para um destaque ou página: { page } no PDF, o CFI do destaque no EPUB. */
+function targetLocation(
+  format: Book['format'],
+  highlight: BookHighlight | undefined,
+  page: number | null
+): string | null {
+  if (format !== 'pdf') return highlight?.location ?? null
+  if (highlight) {
+    const parsed = JSON.parse(highlight.location) as { pages?: { page: number }[] }
+    page = parsed.pages?.[0]?.page ?? page
+  }
+  return page ? JSON.stringify({ page }) : null
+}
+
 const readPanelOpen = (): boolean => {
   try {
     return localStorage.getItem(PANEL_KEY) === '1'
@@ -31,8 +45,9 @@ const readPanelOpen = (): boolean => {
 /** Leitor de livros. `standalone` = janela própria, sem o menu lateral do app. */
 export function ReaderPage({ standalone = false }: { standalone?: boolean }): React.JSX.Element {
   const id = Number(useParams().bookId)
+  const [params] = useSearchParams()
   const { data: book, isError } = useBook(id)
-  const { data: highlights = [] } = useHighlights(id)
+  const { data: highlights = [], isLoading: highlightsLoading } = useHighlights(id)
   const createHighlight = useCreateHighlight()
   const savePosition = useReadingProgress(id)
   const [label, setLabel] = useState('')
@@ -92,7 +107,14 @@ export function ReaderPage({ standalone = false }: { standalone?: boolean }): Re
       </div>
     )
   }
-  if (!book) return <div className="h-full" />
+  // ?destaque=<id> ou ?pagina=<n> (links das fontes da mentora) abrem ali, não na posição salva.
+  const highlightId = Number(params.get('destaque')) || null
+  if (!book || (highlightId && highlightsLoading)) return <div className="h-full" />
+  const startLocation = targetLocation(
+    book.format,
+    highlights.find((h) => h.id === highlightId),
+    Number(params.get('pagina')) || null
+  )
 
   const Reader = book.format === 'pdf' ? PdfReader : EbookReader
 
@@ -142,8 +164,9 @@ export function ReaderPage({ standalone = false }: { standalone?: boolean }): Re
 
       <div className={cn('flex min-h-0 flex-1')}>
         <Reader
-          key={book.id}
+          key={`${book.id}?${params.toString()}`}
           book={book}
+          startLocation={startLocation}
           highlights={highlights}
           onPosition={onPosition}
           onSelection={setSelection}

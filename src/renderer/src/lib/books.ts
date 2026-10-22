@@ -23,11 +23,6 @@ export const HIGHLIGHT_STYLES: Record<
   pink: { label: 'Rosa', fill: 'rgb(244 114 182 / 0.4)', solid: '#f472b6' }
 }
 
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`
-}
-
 /** Baixa o arquivo do livro pelo protocolo sentinela://books/<id>. */
 export async function fetchBookFile(book: Book): Promise<File> {
   const response = await fetch(bookFileUrl(book.id))

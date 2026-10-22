@@ -4,6 +4,7 @@ import OpenAI from 'openai'
 import { zodTextFormat } from 'openai/helpers/zod'
 import { z } from 'zod'
 import type { AiProvider } from '@shared/schemas'
+import type { ModelInfo } from '@shared/types'
 
 export interface ChatTurn {
   role: 'user' | 'assistant'
@@ -30,7 +31,7 @@ export interface AiClient {
     messages: ChatTurn[]
     onDelta: (text: string) => void
   }): Promise<string>
-  listModels(): Promise<string[]>
+  listModels(): Promise<ModelInfo[]>
 }
 
 export class AiError extends Error {}
@@ -135,8 +136,9 @@ function anthropicClient(apiKey: string, model: string): AiClient {
 
     async listModels() {
       try {
-        const models: string[] = []
-        for await (const model of client.models.list()) models.push(model.id)
+        const models: ModelInfo[] = []
+        for await (const model of client.models.list())
+          models.push({ name: model.id, kind: 'chat' })
         return models
       } catch (error) {
         throw anthropicError(error)
@@ -213,11 +215,11 @@ function openaiClient(apiKey: string, model: string): AiClient {
 
     async listModels() {
       try {
-        const models: string[] = []
+        const models: ModelInfo[] = []
         for await (const model of client.models.list()) {
-          if (/^(gpt|o\d|chatgpt)/.test(model.id)) models.push(model.id)
+          if (/^(gpt|o\d|chatgpt)/.test(model.id)) models.push({ name: model.id, kind: 'chat' })
         }
-        return models.toSorted()
+        return models.toSorted((a, b) => a.name.localeCompare(b.name))
       } catch (error) {
         throw openaiError(error)
       }
@@ -250,37 +252,104 @@ function ollamaFormat(schema: z.ZodType): Record<string, unknown> {
   return json
 }
 
-function ollamaClient(baseUrl: string, model: string): AiClient {
+/** Chamada ao Ollama com as mensagens de erro em português. `body` ausente = GET. */
+async function ollamaFetch(
+  baseUrl: string,
+  path: string,
+  body?: unknown,
+  model?: string
+): Promise<Response> {
   const base = baseUrl.replace(/\/+$/, '')
-
-  async function post(path: string, body: unknown): Promise<Response> {
-    let response: Response
-    try {
-      response = await fetch(`${base}${path}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      })
-    } catch {
-      throw new AiError(`O Ollama não respondeu em ${base}. Ele está aberto?`)
-    }
-    if (response.status === 404) {
+  let response: Response
+  try {
+    response = await fetch(
+      `${base}${path}`,
+      body === undefined
+        ? undefined
+        : {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          }
+    )
+  } catch {
+    throw new AiError(`O Ollama não respondeu em ${base}. Ele está aberto?`)
+  }
+  if (response.status === 404 && model) {
+    throw new AiError(
+      `O modelo "${model}" não está instalado no Ollama (rode: ollama pull ${model})`
+    )
+  }
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '')
+    if (detail.includes('exceed_context_size')) {
       throw new AiError(
-        `O modelo "${model}" não está instalado no Ollama (rode: ollama pull ${model})`
+        'O pedido ficou grande demais para o modelo local. Compacte a conversa ou use menos ' +
+          'material.'
       )
     }
-    if (!response.ok) {
-      const detail = await response.text().catch(() => '')
-      if (detail.includes('exceed_context_size')) {
-        throw new AiError(
-          'O pedido ficou grande demais para o modelo local. Comece uma conversa nova ou use ' +
-            'menos material.'
-        )
-      }
-      throw new AiError(`O Ollama respondeu com erro ${response.status}`)
-    }
-    return response
+    throw new AiError(`O Ollama respondeu com erro ${response.status}`)
   }
+  return response
+}
+
+interface OllamaTag {
+  name: string
+  size?: number
+  capabilities?: string[]
+  details?: {
+    family?: string
+    parameter_size?: string
+    quantization_level?: string
+    context_length?: number
+  }
+}
+
+/** Modelos já baixados no Ollama, separados entre conversa e embedding. */
+export async function ollamaModels(baseUrl: string): Promise<ModelInfo[]> {
+  const response = await ollamaFetch(baseUrl, '/api/tags')
+  const data = (await response.json()) as { models?: OllamaTag[] }
+  return (data.models ?? [])
+    .map((m): ModelInfo => {
+      const caps = m.capabilities ?? []
+      // Versões antigas do Ollama não informam as capacidades; aí vale a família ou o nome.
+      const embedding = caps.length
+        ? caps.includes('embedding') && !caps.includes('completion')
+        : /bert/.test(m.details?.family ?? '') || /embed/i.test(m.name)
+      return {
+        name: m.name,
+        kind: embedding ? 'embedding' : 'chat',
+        parameterSize: m.details?.parameter_size,
+        quantization: m.details?.quantization_level,
+        size: m.size,
+        contextLength: m.details?.context_length,
+        vision: caps.includes('vision')
+      }
+    })
+    .toSorted((a, b) => a.name.localeCompare(b.name))
+}
+
+/** Vetores normalizados (norma 1) dos textos, calculados por um modelo de embedding do Ollama. */
+export async function ollamaEmbed(
+  baseUrl: string,
+  model: string,
+  texts: string[]
+): Promise<Float32Array[]> {
+  const response = await ollamaFetch(baseUrl, '/api/embed', { model, input: texts }, model)
+  const data = (await response.json()) as { embeddings?: number[][] }
+  if (data.embeddings?.length !== texts.length) {
+    throw new AiError('O Ollama não devolveu os vetores da busca inteligente')
+  }
+  return data.embeddings.map((values) => {
+    const vector = Float32Array.from(values)
+    const norm = Math.hypot(...vector) || 1
+    return vector.map((v) => v / norm)
+  })
+}
+
+function ollamaClient(baseUrl: string, model: string): AiClient {
+  const post = (path: string, body: unknown): Promise<Response> =>
+    ollamaFetch(baseUrl, path, body, model)
 
   return {
     maxInputChars: OLLAMA_MAX_INPUT_CHARS,
@@ -337,17 +406,7 @@ function ollamaClient(baseUrl: string, model: string): AiClient {
       return text
     },
 
-    async listModels() {
-      let response: Response
-      try {
-        response = await fetch(`${base}/api/tags`)
-      } catch {
-        throw new AiError(`O Ollama não respondeu em ${base}. Ele está aberto?`)
-      }
-      if (!response.ok) throw new AiError(`O Ollama respondeu com erro ${response.status}`)
-      const data = (await response.json()) as { models?: { name: string }[] }
-      return (data.models ?? []).map((m) => m.name)
-    }
+    listModels: () => ollamaModels(baseUrl)
   }
 }
 

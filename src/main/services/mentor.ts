@@ -1,12 +1,14 @@
-import { and, asc, desc, eq, inArray } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 import { AI_STREAM_CHANNEL, type Api } from '@shared/api'
 import {
   aiKeySchema,
+  aiProviderSchema,
   aiSettingsUpdateSchema,
   EXERCISE_KINDS,
   exerciseAnswerSchema,
   generateExercisesSchema,
+  mentorCompactSchema,
   mentorSendSchema,
   suggestScheduleSchema,
   suggestTopicsSchema,
@@ -15,12 +17,16 @@ import {
 import type {
   AiSettings,
   AiStreamEvent,
+  ChatMessage,
   Exercise,
   ExerciseSet,
+  RagSource,
   ScheduleSuggestion
 } from '@shared/types'
-import { createAiClient, DEFAULT_MODELS, type AiClient } from '../ai/providers'
+import { AI_CONFIG_KEY, getSetting, readAiConfig, setSetting, type AiConfig } from '../ai/config'
+import { createAiClient, type AiClient } from '../ai/providers'
 import { studySnapshot, topicMaterial, topicTree } from '../ai/context'
+import type { RagIndex, RagMatch } from '../ai/rag'
 import type { Db } from '../db/client'
 import {
   aiConversations,
@@ -33,20 +39,7 @@ import {
 } from '../db/schema'
 import type { Secrets } from '../secrets'
 
-const CONFIG_KEY = 'ai.config'
 const keyName = (provider: 'anthropic' | 'openai'): string => `ai.key.${provider}`
-
-interface AiConfig {
-  provider: AiProvider
-  models: Record<AiProvider, string>
-  ollamaUrl: string
-}
-
-const DEFAULT_CONFIG: AiConfig = {
-  provider: 'anthropic',
-  models: DEFAULT_MODELS,
-  ollamaUrl: 'http://localhost:11434'
-}
 
 const BASE_SYSTEM =
   'Você é a mentora de estudos do Sentinela, um app pessoal de organização de estudos de um ' +
@@ -58,6 +51,96 @@ const MENTOR_SYSTEM = `${BASE_SYSTEM}
 Seu papel é acompanhar o estudante: dizer se ele está no rumo certo e sugerir próximos passos concretos com base nos dados dele (progresso nos temas, agenda, tarefas, resultados de exercícios e projetos). Seja honesta: se os dados mostram atraso ou pouca prática, diga isso com gentileza e proponha um ajuste realista. Não invente dados que não aparecem no retrato abaixo; se faltar informação para responder bem, pergunte. Prefira respostas curtas e acionáveis.
 
 Quando sugerir algo que o próprio Sentinela faz, diga onde: dividir um tema em tópicos (Temas e progresso), montar a semana (Agenda), gerar exercícios com gabarito (IA mentora > Exercícios).`
+
+const SUMMARY_SYSTEM = `${BASE_SYSTEM}
+
+Agora sua tarefa é resumir uma conversa entre o estudante e a mentora, para a conversa continuar depois só com o resumo. Preserve com precisão: o que o estudante contou sobre si (nomes, apelidos, rotina, preferências, objetivos, prazos, dificuldades), decisões e planos combinados, recomendações já feitas, perguntas em aberto e o assunto do momento. Não invente nada. Escreva em tópicos curtos, sem introdução, com no máximo 350 palavras.`
+
+type MessageRow = typeof aiMessages.$inferSelect
+
+const toMessage = (row: MessageRow): ChatMessage => ({
+  ...row,
+  sources: row.sources ? (JSON.parse(row.sources) as RagSource[]) : null
+})
+
+const SOURCE_LABEL: Record<RagSource['kind'], (s: Pick<RagSource, 'title' | 'page'>) => string> = {
+  note: (s) => `Anotação "${s.title}"`,
+  highlight: (s) => `Destaque no livro "${s.title}"${s.page ? `, p. ${s.page}` : ''}`,
+  ocr: (s) => `Livro "${s.title}", p. ${s.page} (texto reconhecido por OCR)`
+}
+
+/** Instruções da conversa: papel, retrato dos estudos, resumo do que foi compactado e trechos. */
+function mentorSystem(
+  snapshot: string,
+  summary: string | null,
+  matches: (RagMatch & { n: number })[]
+): string {
+  return [
+    MENTOR_SYSTEM,
+    `# Retrato atual dos estudos\n\n${snapshot}`,
+    summary &&
+      '# Resumo da conversa até aqui\n\nAs mensagens mais antigas desta conversa foram ' +
+        `compactadas neste resumo:\n\n${summary}\n\nSe o estudante perguntar algo que não está ` +
+        'no resumo nem nas mensagens, diga que não lembra e peça para ele repetir. Nunca tente ' +
+        'adivinhar.',
+    matches.length &&
+      '# Trechos das anotações e livros do estudante\n\nAchados por busca automática a partir ' +
+        'da pergunta, então podem não ter relação com ela. Use os que ajudarem e cite o número ' +
+        'entre colchetes, como [1]; ignore os outros.\n\n' +
+        matches.map((m) => `[${m.n}] ${SOURCE_LABEL[m.kind](m)}\n${m.text}`).join('\n\n')
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+const chars = (rows: Pick<MessageRow, 'content'>[]): number =>
+  rows.reduce((sum, m) => sum + m.content.length, 0)
+
+/**
+ * Resume as mensagens (somando ao resumo anterior). Se não couberem de uma vez no modelo, vão em
+ * partes, e cada parte atualiza o resumo.
+ */
+async function summarize(
+  ai: AiClient,
+  previous: string | null,
+  rows: MessageRow[],
+  instructions?: string | null
+): Promise<string> {
+  const budget = Math.floor(ai.maxInputChars * 0.6)
+  let summary = previous
+  let batch: string[] = []
+
+  const flush = async (): Promise<void> => {
+    // Tags separam o material das instruções; sem elas, modelos pequenos copiam mensagens inteiras.
+    const prompt = [
+      summary && `<resumo_anterior>\n${summary}\n</resumo_anterior>`,
+      `<conversa>\n${batch.join('\n\n')}\n</conversa>`,
+      instructions && `Dê atenção especial a: ${instructions}`,
+      'Escreva só o resumo atualizado de toda a conversa (o anterior mais o que veio depois), com ' +
+        'suas palavras. Não copie as mensagens nem repita trechos longos.'
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+    summary = (
+      await ai.chat({
+        system: SUMMARY_SYSTEM,
+        messages: [{ role: 'user', content: prompt }],
+        onDelta: () => {}
+      })
+    ).trim()
+    batch = []
+  }
+
+  for (const m of rows) {
+    const line = `${m.role === 'user' ? 'Estudante' : 'Mentora'}: ${m.content}`.slice(0, budget)
+    const size = batch.reduce((s, l) => s + l.length, 0) + (summary?.length ?? 0)
+    if (batch.length && size + line.length > budget) await flush()
+    batch.push(line)
+  }
+  if (batch.length) await flush()
+  if (!summary) throw new Error('A IA não conseguiu resumir a conversa. Tente de novo.')
+  return summary
+}
 
 const DIFFICULTY_TEXT = {
   easy: 'fácil (conceitos básicos e definições)',
@@ -125,30 +208,14 @@ const toExercise = (row: ExerciseRow): Exercise => ({
 export function createMentorService(
   db: Db,
   secrets: Secrets,
-  broadcast: (channel: string, payload: unknown) => void
+  broadcast: (channel: string, payload: unknown) => void,
+  rag: RagIndex
 ): Pick<Api, 'ai' | 'mentor' | 'exercises'> {
-  const getSetting = (key: string): string | null =>
-    db.select().from(settings).where(eq(settings.key, key)).get()?.value ?? null
-  const setSetting = (key: string, value: string): void => {
-    db.insert(settings)
-      .values({ key, value })
-      .onConflictDoUpdate({ target: settings.key, set: { value } })
-      .run()
-  }
-
-  const config = (): AiConfig => {
-    const stored = getSetting(CONFIG_KEY)
-    const parsed = stored ? (JSON.parse(stored) as Partial<AiConfig>) : {}
-    return {
-      ...DEFAULT_CONFIG,
-      ...parsed,
-      models: { ...DEFAULT_CONFIG.models, ...parsed.models }
-    }
-  }
+  const config = (): AiConfig => readAiConfig(db)
 
   const apiKey = (provider: AiProvider): string | null => {
     if (provider === 'ollama') return null
-    const stored = getSetting(keyName(provider))
+    const stored = getSetting(db, keyName(provider))
     if (!stored) return null
     try {
       return secrets.decrypt(stored)
@@ -166,14 +233,47 @@ export function createMentorService(
     }
   }
 
-  const client = (): { ai: AiClient; label: string } => {
+  const client = (provider?: AiProvider): { ai: AiClient; label: string } => {
     const c = config()
-    const model = c.models[c.provider]
+    const p = provider ?? c.provider
+    const model = c.models[p]
     return {
-      ai: createAiClient(c.provider, { model, apiKey: apiKey(c.provider), ollamaUrl: c.ollamaUrl }),
-      label: `${c.provider}/${model}`
+      ai: createAiClient(p, { model, apiKey: apiKey(p), ollamaUrl: c.ollamaUrl }),
+      label: `${p}/${model}`
     }
   }
+
+  const conversationRow = (id: number): typeof aiConversations.$inferSelect => {
+    const row = db.select().from(aiConversations).where(eq(aiConversations.id, id)).get()
+    if (!row) throw new Error('Conversa não encontrada')
+    return row
+  }
+
+  /** Mensagens que ainda vão inteiras para a IA (as de antes do resumo, não). */
+  const liveMessages = (conversation: typeof aiConversations.$inferSelect): MessageRow[] =>
+    db
+      .select()
+      .from(aiMessages)
+      .where(
+        and(
+          eq(aiMessages.conversationId, conversation.id),
+          gt(aiMessages.id, conversation.summaryUntil ?? 0)
+        )
+      )
+      .orderBy(asc(aiMessages.id))
+      .all()
+
+  const saveSummary = (
+    conversationId: number,
+    summary: string,
+    until: number
+  ): typeof aiConversations.$inferSelect =>
+    db
+      .update(aiConversations)
+      .set({ summary, summaryUntil: until, compactedAt: new Date() })
+      .where(eq(aiConversations.id, conversationId))
+      .returning()
+      .get()!
 
   const exerciseSetView = (setId: number): ExerciseSet => {
     const set = db.select().from(exerciseSets).where(eq(exerciseSets.id, setId)).get()
@@ -205,7 +305,8 @@ export function createMentorService(
         const c = config()
         const provider = data.provider ?? c.provider
         setSetting(
-          CONFIG_KEY,
+          db,
+          AI_CONFIG_KEY,
           JSON.stringify({
             provider,
             ollamaUrl: data.ollamaUrl ?? c.ollamaUrl,
@@ -226,7 +327,7 @@ export function createMentorService(
           apiKey: key,
           ollamaUrl: ''
         }).listModels()
-        setSetting(keyName(provider), secrets.encrypt(key))
+        setSetting(db, keyName(provider), secrets.encrypt(key))
         return settingsView()
       },
 
@@ -238,8 +339,10 @@ export function createMentorService(
         return settingsView()
       },
 
-      async listModels() {
-        return client().ai.listModels()
+      async listModels(provider) {
+        return client(
+          provider === undefined ? undefined : aiProviderSchema.parse(provider)
+        ).ai.listModels()
       }
     },
 
@@ -380,9 +483,31 @@ export function createMentorService(
         const tree = topicTree(db)
         if (!tree.all.some((t) => t.id === topicId)) throw new Error('Tema não encontrado')
         const { ai, label } = client()
-        // Metade do orçamento vai para o material; o resto fica para o pedido e a resposta.
-        const material = topicMaterial(db, topicId, Math.floor(ai.maxInputChars / 2))
         const ids = tree.subtreeIds(topicId)
+        // Metade do orçamento vai para o material; o resto fica para o pedido e a resposta. Se o
+        // material do tema não couber inteiro, a busca inteligente escolhe os trechos mais ligados
+        // ao tema e ao foco pedido (incluindo páginas de OCR dos livros do tema).
+        const budget = Math.floor(ai.maxInputChars / 2)
+        const whole = topicMaterial(db, topicId, budget)
+        let material = whole.text
+        if (!whole.complete) {
+          const matches = await rag
+            .search([tree.path(topicId), focus].filter(Boolean).join(': '), {
+              topicIds: ids,
+              limit: 40,
+              perSource: 6
+            })
+            .catch(() => [])
+          const picked: string[] = []
+          let size = 0
+          for (const m of matches) {
+            const piece = `### ${SOURCE_LABEL[m.kind](m)}\n${m.text}\n`
+            if (size + piece.length > budget) break
+            picked.push(piece)
+            size += piece.length
+          }
+          if (picked.length) material = picked.join('\n')
+        }
         const wrong = db
           .select({ question: exercises.question })
           .from(exercises)
@@ -497,6 +622,7 @@ export function createMentorService(
           .where(eq(aiMessages.conversationId, conversationId))
           .orderBy(asc(aiMessages.id))
           .all()
+          .map(toMessage)
       },
 
       async send(input) {
@@ -504,52 +630,83 @@ export function createMentorService(
         const { ai } = client()
 
         const isNew = conversationId === null
-        const conversation = isNew
+        let conversation = isNew
           ? db
               .insert(aiConversations)
               .values({ title: text.replace(/\s+/g, ' ').slice(0, 60) })
               .returning()
               .get()
-          : db.select().from(aiConversations).where(eq(aiConversations.id, conversationId)).get()
-        if (!conversation) throw new Error('Conversa não encontrada')
+          : conversationRow(conversationId)
 
         const userMessage = db
           .insert(aiMessages)
           .values({ conversationId: conversation.id, role: 'user', content: text })
           .returning()
           .get()
-        // O retrato é refeito a cada mensagem, então a mentora sempre vê os dados atuais. Do
-        // histórico vão as mensagens mais recentes que couberem no que sobra do orçamento.
-        const system = `${MENTOR_SYSTEM}\n\n# Retrato atual dos estudos\n\n${studySnapshot(db)}`
-        const all = db
-          .select()
-          .from(aiMessages)
-          .where(eq(aiMessages.conversationId, conversation.id))
-          .orderBy(asc(aiMessages.id))
-          .all()
-        // A última (a pergunta de agora) vai sempre; os 400 são a folga para o aviso de histórico.
-        let used = system.length + text.length + 400
-        let first = all.length - 1
-        while (first > 0 && used + all[first - 1].content.length <= ai.maxInputChars) {
-          first--
-          used += all[first].content.length
-        }
-        // A conversa precisa começar pelo estudante.
-        if (all[first].role === 'assistant') first++
-        const history = all.slice(first).map((m) => ({ role: m.role, content: m.content }))
-        // Sem esse aviso, modelos pequenos inventam o que foi dito nas mensagens que saíram.
-        const omitted = first
-          ? `\n\n# Histórico\n\nAs ${first} mensagens mais antigas desta conversa não cabem mais e ` +
-            'não aparecem abaixo. Se o estudante perguntar algo dito nelas, diga que esse trecho ' +
-            'já saiu do seu histórico e peça para ele repetir. Nunca tente adivinhar.'
-          : ''
-
         const emit = (event: AiStreamEvent): void => broadcast(AI_STREAM_CHANNEL, event)
+
         let reply: string
+        let sources: RagSource[]
         try {
+          let rows = liveMessages(conversation)
+
+          // Trechos das anotações e livros ligados à pergunta. Uma pergunta curta ("e o
+          // segundo?") costuma depender da anterior, então as duas vão juntas para a busca.
+          const previous = rows.findLast((m) => m.role === 'user' && m.id !== userMessage.id)
+          const query =
+            text.length < 80 && previous ? `${previous.content.slice(0, 300)}\n${text}` : text
+          const matches: (RagMatch & { n: number })[] = []
+          let ragSize = 0
+          for (const match of await rag.search(query).catch(() => [])) {
+            // Até 1/4 do orçamento para os trechos.
+            if (ragSize + match.text.length > ai.maxInputChars / 4) break
+            matches.push({ ...match, n: matches.length + 1 })
+            ragSize += match.text.length
+          }
+          sources = matches.map((m) => ({
+            n: m.n,
+            kind: m.kind,
+            sourceId: m.sourceId,
+            highlightId: m.highlightId,
+            page: m.page,
+            title: m.title,
+            excerpt: m.excerpt
+          }))
+
+          // O retrato é refeito a cada mensagem, então a mentora sempre vê os dados atuais.
+          const snapshot = studySnapshot(db)
+          let system = mentorSystem(snapshot, conversation.summary, matches)
+
+          // Não cabe mais: compacta sozinho, mantendo inteiras as mensagens mais recentes.
+          if (system.length + chars(rows) > ai.maxInputChars) {
+            emit({
+              conversationId: conversation.id,
+              type: 'status',
+              text: 'Compactando a conversa para caber no contexto do modelo...'
+            })
+            let keepFrom = rows.length - 1
+            let kept = rows[keepFrom].content.length
+            while (
+              keepFrom > 0 &&
+              kept + rows[keepFrom - 1].content.length <= ai.maxInputChars * 0.3
+            ) {
+              keepFrom--
+              kept += rows[keepFrom].content.length
+            }
+            // A parte mantida começa sempre por uma mensagem do estudante.
+            while (rows[keepFrom].role === 'assistant') keepFrom++
+            if (keepFrom > 0) {
+              const old = rows.slice(0, keepFrom)
+              const summary = await summarize(ai, conversation.summary, old)
+              conversation = saveSummary(conversation.id, summary, old.at(-1)!.id)
+              rows = rows.slice(keepFrom)
+              system = mentorSystem(snapshot, summary, matches)
+            }
+          }
+
           reply = await ai.chat({
-            system: system + omitted,
-            messages: history,
+            system,
+            messages: rows.map((m) => ({ role: m.role, content: m.content })),
             onDelta: (delta) =>
               emit({ conversationId: conversation.id, type: 'delta', text: delta })
           })
@@ -562,7 +719,12 @@ export function createMentorService(
 
         const message = db
           .insert(aiMessages)
-          .values({ conversationId: conversation.id, role: 'assistant', content: reply })
+          .values({
+            conversationId: conversation.id,
+            role: 'assistant',
+            content: reply,
+            sources: sources.length ? JSON.stringify(sources) : null
+          })
           .returning()
           .get()
         const updated = db
@@ -572,7 +734,27 @@ export function createMentorService(
           .returning()
           .get()!
         emit({ conversationId: conversation.id, type: 'done', text: reply })
-        return { conversation: updated, message }
+        return { conversation: updated, message: toMessage(message) }
+      },
+
+      async compact(input) {
+        const { conversationId, instructions } = mentorCompactSchema.parse(input)
+        const conversation = conversationRow(conversationId)
+        const rows = liveMessages(conversation)
+        if (rows.length < 2) throw new Error('Ainda não há o que compactar nesta conversa')
+        const summary = await summarize(client().ai, conversation.summary, rows, instructions)
+        return saveSummary(conversationId, summary, rows.at(-1)!.id)
+      },
+
+      async contextUsage(conversationId) {
+        const conversation = conversationRow(conversationId)
+        const rows = liveMessages(conversation)
+        const system = mentorSystem(studySnapshot(db), conversation.summary, [])
+        return {
+          used: system.length + chars(rows),
+          max: client().ai.maxInputChars,
+          liveMessages: rows.length
+        }
       },
 
       async deleteConversation(id) {

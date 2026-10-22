@@ -150,15 +150,39 @@ aparecem no menu "OCR" do leitor.
     lista vazia.
 - As chaves ficam criptografadas com `safeStorage`; ao salvar, a chave é validada listando os
   modelos (não consome tokens).
+- **Modelos**: `listModels` devolve `ModelInfo` (tipo, parâmetros, quantização, tamanho, visão).
+  No Ollama vêm só os já baixados (`/api/tags`, que informa as capacidades de cada modelo); os de
+  embedding ficam fora da escolha do modelo de conversa. O seletor aparece em Configurações e no
+  topo da IA mentora.
+- Configuração em `src/main/ai/config.ts` (tabela `settings`: `ai.config`, `rag.config` e as
+  chaves `ai.key.*`).
 - **Contexto** (`src/main/ai/context.ts`): a conversa recebe um retrato dos estudos (progresso,
   agenda, tarefas com atraso já marcado, resultados de exercícios, projetos, títulos das
   anotações), refeito a cada mensagem. Cada seção tem um teto, para o retrato não crescer sem
   fim com o uso. Exercícios usam o texto das anotações e os destaques dos livros do tema, e
   reforçam questões erradas antes.
 - **Orçamento**: cada provedor informa quanto texto aguenta (`maxInputChars`: ~32 mil caracteres
-  no Ollama, 120 mil na nuvem). Da conversa vão as mensagens mais recentes que couberem; quando
-  as antigas ficam de fora, a mentora é avisada para não adivinhar o que foi dito nelas. O
-  material dos exercícios usa até metade do orçamento.
+  no Ollama, 120 mil na nuvem). Os trechos da busca inteligente usam até 1/4 dele; o material dos
+  exercícios, até a metade (se o material do tema não couber, a busca escolhe os trechos mais
+  ligados ao tema e ao foco pedido).
+- **Compactação** (`ai_conversations.summary` / `summary_until`): quando a conversa não cabe mais,
+  as mensagens antigas viram um resumo (feito pelo próprio modelo, em partes se preciso) e as
+  mais recentes seguem inteiras; a interface mostra "Compactando a conversa..." pelo evento
+  `status` do streaming. O estudante também pode compactar quando quiser (botão Compactar, com
+  instruções opcionais do que preservar), e vê quanto do contexto a conversa ocupa. As mensagens
+  continuam salvas e visíveis; uma divisória marca até onde a IA recebe só o resumo.
+- **Busca inteligente / RAG** (`src/main/ai/rag.ts`): anotações, destaques e páginas com OCR são
+  cortados em trechos (~1.200 caracteres, com sobreposição) nas tabelas `rag_chunks` e
+  `rag_sources` (impressão digital por origem: só o que mudou é refeito, alguns segundos depois de
+  cada alteração). Os vetores vêm de um modelo de embedding do **Ollama**, sempre local, mesmo
+  com a conversa no Claude ou na OpenAI (automático: `bge-m3`, que entende bem português). A
+  busca junta os vetores mais parecidos (similaridade ≥ 0,5, calibrada no bge-m3) com a FTS5
+  `rag_chunks_fts` (todos os termos) por Reciprocal Rank Fusion. Os vetores são comparados em
+  memória, sem extensão nativa (milissegundos para dezenas de milhares de trechos). Sem Ollama, a
+  busca segue só por palavras. A resposta guarda os trechos usados (`ai_messages.sources`) e a
+  interface mostra as fontes com link para a anotação ou para o livro no destaque/página
+  (`/biblioteca/:id?destaque=` ou `?pagina=`). A mesma busca aparece em Anotações ("Relacionadas
+  por significado") e em Configurações (testar a busca).
 - Tudo que a IA devolve é conferido em código antes de gravar ou mostrar: tópicos duplicados,
   blocos fora do horário ou em conflito com a agenda, alternativas e índices inválidos.
 - Sugestões de tópicos e de agenda **não são gravadas** sozinhas: a interface mostra e o

@@ -50,6 +50,20 @@
       "when": 1792537052619,
       "tag": "0006_mentor",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1792628116233,
+      "tag": "0007_rag",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1792628126027,
+      "tag": "0008_rag_fts",
+      "breakpoints": true
     }
   ]
 }

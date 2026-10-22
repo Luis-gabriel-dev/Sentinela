@@ -298,6 +298,29 @@ export const mentorSendSchema = z.object({
 })
 export type MentorSendInput = z.input<typeof mentorSendSchema>
 
+export const mentorCompactSchema = z.object({
+  conversationId: id,
+  /** O que o resumo deve preservar com mais cuidado (opcional). */
+  instructions: optionalText(1000).optional()
+})
+export type MentorCompactInput = z.input<typeof mentorCompactSchema>
+
+// Busca inteligente (RAG)
+
+export const RAG_KINDS = ['note', 'highlight', 'ocr'] as const
+export type RagKind = (typeof RAG_KINDS)[number]
+
+export const ragSettingsUpdateSchema = z
+  .object({
+    enabled: z.boolean(),
+    /** Modelo de embedding do Ollama; null = escolher sozinho entre os instalados. */
+    embedModel: z.string().trim().min(1).max(200).nullable()
+  })
+  .partial()
+export type RagSettingsUpdate = z.input<typeof ragSettingsUpdateSchema>
+
+export const ragSearchSchema = z.string().trim().min(1).max(1000)
+
 // Anexos (imagens coladas nas anotações)
 
 export const ATTACHMENT_MIME_TYPES = {

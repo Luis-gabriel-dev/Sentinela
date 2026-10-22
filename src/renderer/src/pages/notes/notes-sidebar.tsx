@@ -1,12 +1,28 @@
 import { useEffect, useMemo, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router'
-import { ChevronRight, FilePlus2, FileText, FolderPlus, Inbox, Search, X } from 'lucide-react'
+import {
+  ChevronRight,
+  FilePlus2,
+  FileText,
+  FolderPlus,
+  Inbox,
+  Search,
+  Sparkles,
+  X
+} from 'lucide-react'
 import { SNIPPET_MARK, type NoteSummary } from '@shared/types'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 import { noteTitle } from '@renderer/lib/format'
-import { useCreateNote, useNotes, useNoteSearch, useTopics } from '@renderer/lib/queries'
+import {
+  useCreateNote,
+  useNotes,
+  useNoteSearch,
+  useRagSearch,
+  useTopics
+} from '@renderer/lib/queries'
+import { useDebounced } from '@renderer/lib/use-debounced'
 import { buildTopicTree, topicPath, type TopicNode } from '@renderer/lib/topics'
 import { cn } from '@renderer/lib/utils'
 import { TopicDialog } from '../topics/topic-dialog'
@@ -301,11 +317,18 @@ function SearchResults({
 }): React.JSX.Element {
   const { data: results = [], isFetching } = useNoteSearch(query)
   const { data: topics = [] } = useTopics()
+  // Busca por significado (anotações que falam do assunto sem usar as mesmas palavras).
+  const debounced = useDebounced(query.trim(), 400)
+  const { data: hits = [], isFetching: searchingMeaning } = useRagSearch(debounced)
+  const exact = new Set(results.map((r) => r.id))
+  const related = hits
+    .filter((h) => h.kind === 'note' && !exact.has(h.sourceId))
+    .filter((h, i, all) => all.findIndex((o) => o.sourceId === h.sourceId) === i)
 
-  if (results.length === 0) {
+  if (results.length === 0 && related.length === 0) {
     return (
       <p className="px-2 py-3 text-sm text-muted-foreground">
-        {isFetching ? 'Buscando...' : 'Nada encontrado.'}
+        {isFetching || searchingMeaning ? 'Buscando...' : 'Nada encontrado.'}
       </p>
     )
   }
@@ -334,6 +357,26 @@ function SearchResults({
           )}
         </NavLink>
       ))}
+      {related.length > 0 && (
+        <>
+          <p className="mt-3 flex items-center gap-1.5 px-2.5 text-xs font-medium text-muted-foreground">
+            <Sparkles className="size-3.5" /> Relacionadas por significado
+          </p>
+          {related.map((h) => (
+            <NavLink
+              key={h.sourceId}
+              to={`/anotacoes/${h.sourceId}`}
+              className={cn(
+                'rounded-md px-2.5 py-2 hover:bg-accent/60',
+                h.sourceId === activeId && 'bg-accent'
+              )}
+            >
+              <div className="truncate text-sm font-medium">{noteTitle(h.title)}</div>
+              <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{h.excerpt}</p>
+            </NavLink>
+          ))}
+        </>
+      )}
     </div>
   )
 }

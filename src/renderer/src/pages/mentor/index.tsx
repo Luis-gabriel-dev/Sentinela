@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { AiSettingsForm } from '@renderer/components/ai-settings'
 import { MentorIcon } from '@renderer/components/icons'
+import { ModelPicker } from '@renderer/components/model-picker'
 import { aiReady, useAiSettings } from '@renderer/lib/queries'
 import { cn } from '@renderer/lib/utils'
 import { MentorChat } from './chat'
@@ -57,11 +58,9 @@ export function MentorPage(): React.JSX.Element {
             </button>
           ))}
         </div>
-        {settings && (
-          <span className="ml-auto truncate font-mono text-xs text-muted-foreground">
-            {settings.models[settings.provider]}
-          </span>
-        )}
+        <div className="ml-auto min-w-0">
+          <ModelPicker compact />
+        </div>
       </header>
       {tab === 'chat' ? <MentorChat /> : <MentorExercises />}
     </div>

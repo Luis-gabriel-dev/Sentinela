@@ -1,12 +1,13 @@
 import { useState } from 'react'
-import { Check, ExternalLink, KeyRound, Loader2, RefreshCw, Trash2 } from 'lucide-react'
+import { Check, ExternalLink, KeyRound, Loader2, Trash2 } from 'lucide-react'
 import type { AiProvider } from '@shared/schemas'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
 import { ConfirmDelete } from '@renderer/components/confirm-delete'
+import { ModelPicker } from '@renderer/components/model-picker'
 import {
-  useAiModels,
+  aiReady,
   useAiSettings,
   useClearAiKey,
   useSetAiKey,
@@ -33,19 +34,10 @@ export function AiSettingsForm(): React.JSX.Element | null {
   const clearKey = useClearAiKey()
   const [keyInput, setKeyInput] = useState('')
   const [ollamaUrl, setOllamaUrl] = useState<string | null>(null)
-  const [modelInput, setModelInput] = useState<string | null>(null)
-  const ready = !!settings && (settings.provider === 'ollama' || settings.keys[settings.provider])
-  const models = useAiModels(false)
+  const ready = aiReady(settings)
 
   if (!settings) return null
   const provider = settings.provider
-  const model = modelInput ?? settings.models[provider]
-
-  const saveModel = (): void => {
-    const value = model.trim()
-    if (value && value !== settings.models[provider]) update.mutate([{ model: value }])
-    setModelInput(null)
-  }
 
   return (
     <div className="space-y-5">
@@ -54,10 +46,7 @@ export function AiSettingsForm(): React.JSX.Element | null {
           <button
             key={p.value}
             type="button"
-            onClick={() => {
-              setModelInput(null)
-              update.mutate([{ provider: p.value }])
-            }}
+            onClick={() => update.mutate([{ provider: p.value }])}
             className={cn(
               'rounded-lg border px-4 py-3 text-left transition hover:bg-accent',
               provider === p.value && 'border-primary ring-1 ring-primary'
@@ -144,40 +133,25 @@ export function AiSettingsForm(): React.JSX.Element | null {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Instale o Ollama e baixe um modelo (por exemplo: <code>ollama pull llama3.2</code>).
+            Instale o Ollama e baixe um modelo (por exemplo: <code>ollama pull qwen2.5:7b</code>).
             Tudo roda no seu computador.
           </p>
         </form>
       )}
 
       <div className="grid gap-2">
-        <Label htmlFor="ai-model">Modelo</Label>
-        <div className="flex gap-2">
-          <Input
-            id="ai-model"
-            list="ai-model-options"
-            value={model}
-            onChange={(e) => setModelInput(e.target.value)}
-            onBlur={saveModel}
-            onKeyDown={(e) => e.key === 'Enter' && saveModel()}
-            className="font-mono text-sm"
-          />
-          <datalist id="ai-model-options">
-            {(models.data ?? []).map((m) => (
-              <option key={m} value={m} />
-            ))}
-          </datalist>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={!ready || models.isFetching}
-            onClick={() => void models.refetch()}
-          >
-            <RefreshCw className={models.isFetching ? 'animate-spin' : undefined} />
-            {models.data ? `${models.data.length} disponíveis` : 'Ver modelos'}
-          </Button>
-        </div>
-        {models.error && <p className="text-xs text-destructive">{models.error.message}</p>}
+        <Label>Modelo</Label>
+        {ready ? (
+          <ModelPicker />
+        ) : (
+          <p className="text-sm text-muted-foreground">Salve a chave para escolher o modelo.</p>
+        )}
+        {provider === 'ollama' && (
+          <p className="text-xs text-muted-foreground">
+            Modelos de 7B rodam bem com 8 GB de memória de vídeo; os de 14B respondem melhor
+            (agenda, exercícios) se a placa aguentar.
+          </p>
+        )}
         {provider === 'anthropic' && (
           <p className="text-xs text-muted-foreground">
             Padrão: <code>claude-opus-5-5</code>. Se o modelo recusar um pedido por política, a

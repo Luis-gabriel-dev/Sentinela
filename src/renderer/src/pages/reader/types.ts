@@ -19,6 +19,8 @@ export interface PendingSelection {
 
 export interface ReaderProps {
   book: Book
+  /** Onde abrir, no lugar da posição salva (ex.: um destaque citado pela mentora). */
+  startLocation?: string | null
   highlights: BookHighlight[]
   onPosition: (position: ReaderPosition) => void
   onSelection: (selection: PendingSelection | null) => void

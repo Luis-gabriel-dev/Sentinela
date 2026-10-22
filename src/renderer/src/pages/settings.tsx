@@ -2,6 +2,7 @@ import { Monitor, Moon, Sun } from 'lucide-react'
 import { AiSettingsForm } from '@renderer/components/ai-settings'
 import { GithubConnect } from '@renderer/components/github-connect'
 import { PageHeader } from '@renderer/components/page-header'
+import { RagSettings } from '@renderer/components/rag-settings'
 import { useAppInfo } from '@renderer/lib/queries'
 import { useTheme, type Theme } from '@renderer/lib/theme'
 import { cn } from '@renderer/lib/utils'
@@ -43,6 +44,11 @@ export function SettingsPage(): React.JSX.Element {
       <section className="mt-6 space-y-3 rounded-xl border bg-card p-5">
         <h2 className="font-medium">Inteligência artificial</h2>
         <AiSettingsForm />
+      </section>
+
+      <section className="mt-6 space-y-3 rounded-xl border bg-card p-5">
+        <h2 className="font-medium">Busca inteligente</h2>
+        <RagSettings />
       </section>
 
       <section className="mt-6 space-y-3 rounded-xl border bg-card p-5">

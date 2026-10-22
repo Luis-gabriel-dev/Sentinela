@@ -8,13 +8,17 @@ import {
 } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import type { Api } from '@shared/api'
-import type { DateRange, TaskFilter } from '@shared/schemas'
+import type { AiProvider, DateRange, TaskFilter } from '@shared/schemas'
 import type {
   AiSettings,
   AppInfo,
   BlockCheckin,
   ChatMessage,
+  ContextUsage,
   Conversation,
+  ModelInfo,
+  RagHit,
+  RagStatus,
   ExerciseSet,
   ExerciseSetSummary,
   Book,
@@ -48,9 +52,12 @@ export const keys = {
   highlights: (bookId: number): QueryKey => ['highlights', bookId],
   ocr: (bookId: number): QueryKey => ['ocr', bookId],
   ai: ['ai'],
-  aiModels: ['ai', 'models'],
+  aiModels: (provider?: AiProvider): QueryKey => ['ai', 'models', provider ?? 'active'],
+  rag: ['rag'],
+  ragSearch: (query: string): QueryKey => ['rag', 'search', query],
   conversations: ['mentor', 'conversations'],
   messages: (conversationId: number): QueryKey => ['mentor', 'messages', conversationId],
+  contextUsage: (conversationId: number): QueryKey => ['mentor', 'context', conversationId],
   exerciseSets: ['exercises'],
   exerciseSet: (id: number): QueryKey => ['exercises', id],
   github: ['github'],
@@ -125,8 +132,42 @@ export const useAiSettings = (): UseQueryResult<AiSettings> =>
 export const aiReady = (settings: AiSettings | undefined): boolean =>
   !!settings && (settings.provider === 'ollama' || settings.keys[settings.provider])
 
-export const useAiModels = (enabled: boolean): UseQueryResult<string[]> =>
-  useQuery({ queryKey: keys.aiModels, queryFn: () => api.ai.listModels(), enabled, staleTime: 0 })
+/** Modelos do provedor ativo (ou do informado). No Ollama, os já baixados. */
+export const useAiModels = (enabled: boolean, provider?: AiProvider): UseQueryResult<ModelInfo[]> =>
+  useQuery({
+    queryKey: keys.aiModels(provider),
+    queryFn: () => api.ai.listModels(provider),
+    enabled,
+    staleTime: 30_000,
+    retry: false
+  })
+
+/** Estado da busca inteligente; enquanto o índice está sendo calculado, é consultado a cada 1,5 s. */
+export const useRagStatus = (): UseQueryResult<RagStatus> =>
+  useQuery({
+    queryKey: keys.rag,
+    queryFn: () => api.rag.status(),
+    staleTime: 0,
+    refetchInterval: (query) => (query.state.data?.running ? 1500 : false)
+  })
+
+export const useRagSearch = (query: string): UseQueryResult<RagHit[]> =>
+  useQuery({
+    queryKey: keys.ragSearch(query),
+    queryFn: () => api.rag.search(query),
+    enabled: query.trim().length > 2,
+    staleTime: 0,
+    retry: false,
+    placeholderData: (previous) => previous
+  })
+
+export const useContextUsage = (conversationId: number | null): UseQueryResult<ContextUsage> =>
+  useQuery({
+    queryKey: keys.contextUsage(conversationId ?? 0),
+    queryFn: () => api.mentor.contextUsage(conversationId!),
+    enabled: conversationId !== null,
+    staleTime: 0
+  })
 
 export const useConversations = (): UseQueryResult<Conversation[]> =>
   useQuery({ queryKey: keys.conversations, queryFn: () => api.mentor.conversations() })
@@ -238,6 +279,11 @@ export const useGenerateExercises = mutationFor('mentor', 'generateExercises', [
 export const useDeleteConversation = mutationFor('mentor', 'deleteConversation', [
   keys.conversations
 ])
+// ['mentor'] cobre a lista de conversas, as mensagens e o uso do contexto.
+export const useCompactConversation = mutationFor('mentor', 'compact', [['mentor']])
+
+export const useUpdateRagSettings = mutationFor('rag', 'updateSettings', [keys.rag])
+export const useReindexRag = mutationFor('rag', 'reindex', [keys.rag])
 
 export const useAnswerExercise = mutationFor('exercises', 'answer', [keys.exerciseSets])
 export const useRemoveExerciseSet = mutationFor('exercises', 'removeSet', [keys.exerciseSets])

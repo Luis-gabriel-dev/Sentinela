@@ -1,10 +1,13 @@
 import type {
   AiKeyInput,
+  AiProvider,
   AiSettingsUpdate,
   AttachmentInput,
   ExerciseAnswerInput,
   GenerateExercisesInput,
+  MentorCompactInput,
   MentorSendInput,
+  RagSettingsUpdate,
   SuggestScheduleInput,
   SuggestTopicsInput,
   BookUpdate,
@@ -29,8 +32,12 @@ import type {
   AddBooksResult,
   AiSettings,
   ChatMessage,
+  ContextUsage,
   Conversation,
   Exercise,
+  ModelInfo,
+  RagHit,
+  RagStatus,
   ExerciseSet,
   ExerciseSetSummary,
   ScheduleSuggestion,
@@ -151,8 +158,19 @@ export interface Api {
     /** Valida a chave no provedor e guarda criptografada. */
     setKey(input: AiKeyInput): Promise<AiSettings>
     clearKey(provider: 'anthropic' | 'openai'): Promise<AiSettings>
-    /** Modelos disponíveis no provedor ativo (também serve de teste de conexão). */
-    listModels(): Promise<string[]>
+    /**
+     * Modelos disponíveis no provedor ativo, ou no informado (também serve de teste de conexão).
+     * No Ollama, só os já baixados.
+     */
+    listModels(provider?: AiProvider): Promise<ModelInfo[]>
+  }
+  rag: {
+    status(): Promise<RagStatus>
+    updateSettings(input: RagSettingsUpdate): Promise<RagStatus>
+    /** Recalcula o índice inteiro (ex.: depois de trocar o modelo de embedding). */
+    reindex(): Promise<RagStatus>
+    /** Busca por significado em anotações, destaques e páginas de OCR. */
+    search(query: string): Promise<RagHit[]>
   }
   mentor: {
     /** Propõe subtópicos para um tema (não salva: a interface mostra para revisão). */
@@ -167,6 +185,9 @@ export interface Api {
      * e a mensagem final é devolvida aqui.
      */
     send(input: MentorSendInput): Promise<{ conversation: Conversation; message: ChatMessage }>
+    /** Resume a conversa até aqui; daí em diante a IA recebe o resumo no lugar das mensagens. */
+    compact(input: MentorCompactInput): Promise<Conversation>
+    contextUsage(conversationId: number): Promise<ContextUsage>
     deleteConversation(id: number): Promise<void>
   }
   exercises: {

@@ -85,3 +85,10 @@ export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
   medium: 'Média',
   hard: 'Difícil'
 }
+
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  const decimal = (n: number): string => n.toFixed(1).replace('.', ',')
+  if (bytes < 1024 ** 3) return `${decimal(bytes / 1024 ** 2)} MB`
+  return `${decimal(bytes / 1024 ** 3)} GB`
+}
