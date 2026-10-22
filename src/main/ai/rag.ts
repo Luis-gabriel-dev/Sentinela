@@ -33,12 +33,20 @@ const RRF_K = 60
 /** Ordem de preferência entre os modelos de embedding instalados; o bge-m3 entende bem português. */
 const PREFERRED_MODELS = [/bge-m3/, /multilingual|e5/, /nomic-embed/, /mxbai/, /./]
 
+/**
+ * Palavras ignoradas na busca por palavras: as muito comuns e as que falam da pergunta, não do
+ * assunto ("o que eu anotei sobre X?" vira só "X"; como a busca exige todos os termos, "anotei"
+ * sozinho já impediria achar a anotação).
+ */
 const STOPWORDS = new Set(
   (
     'que para por com uma uns umas dos das nos nas pelo pela como qual quais quando onde porque ' +
     'sobre entre isso esse essa este esta isto aquele aquela meu minha meus minhas seu sua seus ' +
     'suas ser estar tem ter mais menos muito pouco tudo nada voce você ele ela eles elas nao não ' +
-    'sim the and for with what how why from this that are you'
+    'sim the and for with what how why from this that are you ' +
+    'anotei anotou anotado anotada escrevi escreveu destaquei destacou marquei estudei aprendi ' +
+    'lembra lembro lembrar falei falamos disse explique explica explicar fale diga mostre resuma ' +
+    'sei sabe saber anotação anotações anotacao anotacoes nota notas livro livros destaques'
   ).split(' ')
 )
 
