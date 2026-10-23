@@ -1,8 +1,10 @@
 import { Monitor, Moon, Sun } from 'lucide-react'
 import { AiSettingsForm } from '@renderer/components/ai-settings'
+import { BackupSettings } from '@renderer/components/backup-settings'
 import { GithubConnect } from '@renderer/components/github-connect'
 import { PageHeader } from '@renderer/components/page-header'
 import { RagSettings } from '@renderer/components/rag-settings'
+import { ReminderSettings } from '@renderer/components/reminder-settings'
 import { useAppInfo } from '@renderer/lib/queries'
 import { useTheme, type Theme } from '@renderer/lib/theme'
 import { cn } from '@renderer/lib/utils'
@@ -42,6 +44,11 @@ export function SettingsPage(): React.JSX.Element {
       </section>
 
       <section className="mt-6 space-y-3 rounded-xl border bg-card p-5">
+        <h2 className="font-medium">Lembretes</h2>
+        <ReminderSettings />
+      </section>
+
+      <section className="mt-6 space-y-3 rounded-xl border bg-card p-5">
         <h2 className="font-medium">Inteligência artificial</h2>
         <AiSettingsForm />
       </section>
@@ -57,13 +64,8 @@ export function SettingsPage(): React.JSX.Element {
       </section>
 
       <section className="mt-6 space-y-2 rounded-xl border bg-card p-5 text-sm">
-        <h2 className="font-medium">Dados</h2>
-        <p className="text-muted-foreground">
-          Tudo fica salvo localmente neste arquivo SQLite. Para backup, copie-o com o app fechado.
-        </p>
-        <code className="block rounded-md bg-muted px-3 py-2 font-mono text-xs break-all select-all">
-          {info?.dbPath ?? '...'}
-        </code>
+        <h2 className="font-medium">Dados e backup</h2>
+        <BackupSettings />
         <p className="pt-2 text-xs text-muted-foreground">Sentinela v{info?.version}</p>
       </section>
     </>

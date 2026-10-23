@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import 'pdfjs-dist/web/pdf_viewer.css'
-import { ChevronDown, ChevronUp, Loader2, Minus, Moon, Plus, RotateCcw, Search } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  Minus,
+  Moon,
+  Plus,
+  RotateCcw,
+  Search,
+  Sparkles
+} from 'lucide-react'
 import type { BookHighlight, OcrPage } from '@shared/types'
 import { ScanTextIcon } from '@renderer/components/icons'
 import { Button } from '@renderer/components/ui/button'
@@ -568,8 +578,30 @@ export function PdfReader({
                       {ocr.lowConfidencePages.length > 12 ? '…' : ''}
                     </p>
                   )}
+                  {ocr.refinedCount > 0 && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {ocr.refinedCount}{' '}
+                      {ocr.refinedCount === 1 ? 'página relida' : 'páginas relidas'} por IA (vale
+                      para a busca e a mentora)
+                    </p>
+                  )}
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                {ocr.lowConfidencePages.length > 0 &&
+                  (ocr.visionModel ? (
+                    <DropdownMenuItem onSelect={ocr.refine} disabled={!!ocr.refining}>
+                      <Sparkles /> Melhorar {ocr.lowConfidencePages.length}{' '}
+                      {ocr.lowConfidencePages.length === 1 ? 'página' : 'páginas'} com IA
+                      <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+                        {ocr.visionModel}
+                      </span>
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                      Para melhorar essas páginas com IA, deixe o Ollama aberto com um modelo de
+                      visão (ex.: <code>ollama pull qwen2.5vl:7b</code>).
+                    </DropdownMenuLabel>
+                  ))}
                 <DropdownMenuItem onSelect={ocr.redo}>
                   <RotateCcw /> Refazer OCR
                 </DropdownMenuItem>
@@ -606,7 +638,7 @@ export function PdfReader({
         </div>
       </div>
 
-      {scanned && ready && (ocr.progress || !ocrComplete) && (
+      {scanned && ready && (ocr.progress || ocr.refining || !ocrComplete) && (
         <OcrBar ocr={ocr} numPages={numPages} />
       )}
 

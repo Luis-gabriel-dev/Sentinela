@@ -1,23 +1,26 @@
 import { Link } from 'react-router'
 import type { RagSource } from '@shared/types'
-import { HighlightIcon, NotesIcon, ScanTextIcon } from '@renderer/components/icons'
+import { HighlightIcon, LibraryIcon, NotesIcon, ScanTextIcon } from '@renderer/components/icons'
 import { cn } from '@renderer/lib/utils'
 
 type Source = Omit<RagSource, 'n'> & { n?: number }
 
+/** `where`: como mostrar a posição (página no PDF, seção no EPUB). */
 const KIND = {
-  note: { icon: NotesIcon, label: 'Anotação' },
-  highlight: { icon: HighlightIcon, label: 'Destaque' },
-  ocr: { icon: ScanTextIcon, label: 'Livro (OCR)' }
+  note: { icon: NotesIcon, label: 'Anotação', where: 'p.' },
+  highlight: { icon: HighlightIcon, label: 'Destaque', where: 'p.' },
+  ocr: { icon: ScanTextIcon, label: 'Livro (OCR)', where: 'p.' },
+  book: { icon: LibraryIcon, label: 'Livro', where: 'p.' },
+  ebook: { icon: LibraryIcon, label: 'Livro', where: 'seção' }
 } as const
 
-/** Onde abrir a origem: a anotação, ou o livro no destaque ou na página. */
+/** Onde abrir a origem: a anotação, ou o livro no destaque, na página ou na seção. */
 function sourceHref(source: Source): string {
   if (source.kind === 'note') return `/anotacoes/${source.sourceId}`
-  if (source.highlightId) return `/biblioteca/${source.sourceId}?destaque=${source.highlightId}`
-  return source.page
-    ? `/biblioteca/${source.sourceId}?pagina=${source.page}`
-    : `/biblioteca/${source.sourceId}`
+  const book = `/biblioteca/${source.sourceId}`
+  if (source.highlightId) return `${book}?destaque=${source.highlightId}`
+  if (!source.page) return book
+  return source.kind === 'ebook' ? `${book}?secao=${source.page}` : `${book}?pagina=${source.page}`
 }
 
 /** Um trecho achado pela busca inteligente, com link para a origem. */
@@ -29,7 +32,7 @@ export function SourceLink({
   /** Trecho consultado que a resposta não citou. */
   dimmed?: boolean
 }): React.JSX.Element {
-  const { icon: Icon, label } = KIND[source.kind]
+  const { icon: Icon, label, where } = KIND[source.kind]
   return (
     <Link
       to={sourceHref(source)}
@@ -47,7 +50,7 @@ export function SourceLink({
         <Icon className="size-3.5 shrink-0" />
         <span className="truncate">
           {label} · <span className="font-medium text-foreground">{source.title}</span>
-          {source.page ? ` · p. ${source.page}` : ''}
+          {source.page ? ` · ${where} ${source.page}` : ''}
         </span>
       </span>
       <span className="mt-1 line-clamp-2 text-xs text-muted-foreground">{source.excerpt}</span>

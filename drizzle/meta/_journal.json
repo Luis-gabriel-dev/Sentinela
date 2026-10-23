@@ -64,6 +64,20 @@
       "when": 1792628126027,
       "tag": "0008_rag_fts",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1792714623256,
+      "tag": "0009_book_texts",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1792715136658,
+      "tag": "0010_ocr_refined",
+      "breakpoints": true
     }
   ]
 }

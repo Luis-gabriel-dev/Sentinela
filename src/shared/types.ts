@@ -108,6 +108,8 @@ export interface Book {
   progress: number
   location: string | null
   lastOpenedAt: Date | null
+  /** Quando o texto foi lido para a busca inteligente (null = ainda não). */
+  textReadAt: Date | null
   createdAt: Date
   updatedAt: Date
   /** O arquivo ainda está no caminho salvo. */
@@ -139,6 +141,8 @@ export interface OcrPage {
   lines: OcrLine[]
   /** Confiança média da página, 0–100 */
   confidence: number
+  /** Modelo de visão que reescreveu o texto da página (null = só o Tesseract). */
+  refinedBy: string | null
 }
 
 export interface AddBooksResult {
@@ -310,6 +314,24 @@ export type AiStreamEvent =
   /** Etapa antes da resposta (ex.: compactando a conversa). */
   | { conversationId: number; type: 'status'; text: string }
 
+export interface ReminderSettings {
+  enabled: boolean
+  blocks: boolean
+  blockMinutes: number
+  tasks: boolean
+  projects: boolean
+  digestTime: string
+  closeToTray: boolean
+  openAtLogin: boolean
+}
+
+export interface ReminderStatus extends ReminderSettings {
+  /** O sistema mostra notificações. */
+  supported: boolean
+  /** Abrir com o sistema só funciona no app instalado (não no modo de desenvolvimento). */
+  canOpenAtLogin: boolean
+}
+
 export interface RagSettings {
   enabled: boolean
   /** Escolhido pelo estudante; null = automático. */
@@ -321,7 +343,7 @@ export interface RagStatus extends RagSettings {
   activeModel: string | null
   chunks: number
   embedded: number
-  sources: { notes: number; highlights: number; ocrPages: number }
+  sources: { notes: number; highlights: number; ocrPages: number; bookPages: number }
   running: boolean
   /** Por que a busca está só por palavras (Ollama fora do ar, sem modelo de embedding...). */
   problem: string | null
@@ -335,4 +357,17 @@ export interface RagHit extends Omit<RagSource, 'n'> {
 export interface AppInfo {
   version: string
   dbPath: string
+}
+
+/** O que há num backup, para conferir antes de restaurar. */
+export interface BackupInfo {
+  path: string
+  createdAt: Date
+  counts: { topics: number; notes: number; tasks: number; books: number; conversations: number }
+}
+
+export interface BackupStatus {
+  /** Pasta das cópias automáticas semanais. */
+  autoDir: string
+  lastAuto: Date | null
 }

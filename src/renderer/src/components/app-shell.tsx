@@ -1,5 +1,7 @@
-import type { ComponentType } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router'
+import { useEffect, type ComponentType } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
+import { NAVIGATE_CHANNEL } from '@shared/api'
 import { Monitor, Moon, Sun, type LucideIcon } from 'lucide-react'
 import logoUrl from '../../../../build/icon.svg'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
@@ -15,6 +17,8 @@ import {
   TodayIcon,
   TopicsIcon
 } from '@renderer/components/icons'
+import { readPendingBooks } from '@renderer/lib/book-text'
+import { keys, useBooks, useRagStatus } from '@renderer/lib/queries'
 import { useTheme, type Theme } from '@renderer/lib/theme'
 import { cn } from '@renderer/lib/utils'
 
@@ -98,9 +102,39 @@ function ThemeSwitcher(): React.JSX.Element {
 /** Páginas com layout próprio de tela cheia (painéis), sem o container centralizado. */
 const FULL_BLEED = [/^\/anotacoes/, /^\/biblioteca\/\d+/, /^\/mentora/]
 
+/** Lê em segundo plano o texto dos livros ainda não lidos, para a busca inteligente. */
+function useBookTextReader(): void {
+  const client = useQueryClient()
+  const { data: books } = useBooks()
+  const { data: rag } = useRagStatus()
+  const enabled = rag?.enabled ?? false
+
+  useEffect(() => {
+    if (!books || !enabled) return
+    // Espera o app abrir de vez antes de começar (abrir livros grandes pesa um pouco).
+    const timer = setTimeout(
+      () =>
+        void readPendingBooks(books, () => {
+          void client.invalidateQueries({ queryKey: keys.books })
+          void client.invalidateQueries({ queryKey: keys.rag })
+        }),
+      10_000
+    )
+    return () => clearTimeout(timer)
+  }, [books, enabled, client])
+}
+
 export function AppShell(): React.JSX.Element {
   const { pathname } = useLocation()
+  const navigate = useNavigate()
   const fullBleed = FULL_BLEED.some((p) => p.test(pathname))
+  useBookTextReader()
+
+  // Clique numa notificação de lembrete: o processo principal pede a tela certa.
+  useEffect(
+    () => window.sentinela.on(NAVIGATE_CHANNEL, (route) => void navigate(String(route))),
+    [navigate]
+  )
 
   return (
     <div className="flex h-full">

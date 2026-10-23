@@ -6,14 +6,18 @@ import type { OcrState } from './use-ocr'
 
 /** Aviso de PDF escaneado, com o botão de OCR e o progresso enquanto ele roda. */
 export function OcrBar({ ocr, numPages }: { ocr: OcrState; numPages: number }): React.JSX.Element {
-  if (ocr.progress) {
-    const { done, total } = ocr.progress
+  const running = ocr.progress ?? ocr.refining
+  if (running) {
+    const { done, total } = running
     const percent = total ? Math.round((done / total) * 100) : 0
+    const step = `${Math.min(done + 1, total)} de ${total}`
     return (
       <div className="flex items-center gap-3 border-b bg-primary/5 px-4 py-2 text-sm">
         <ScanTextIcon className="size-4 shrink-0 text-primary" />
         <span className="whitespace-nowrap">
-          Reconhecendo texto… página {Math.min(done + 1, total)} de {total}
+          {ocr.progress
+            ? `Reconhecendo texto… página ${step}`
+            : `Melhorando com IA (${ocr.visionModel})… ${step}`}
         </span>
         <Progress value={percent} className="h-1.5 max-w-72 flex-1" />
         <span className="w-10 text-xs text-muted-foreground tabular-nums">{percent}%</span>

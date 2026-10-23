@@ -329,6 +329,29 @@ export async function ollamaModels(baseUrl: string): Promise<ModelInfo[]> {
     .toSorted((a, b) => a.name.localeCompare(b.name))
 }
 
+/** Texto de uma imagem (PNG), lido por um modelo de visão do Ollama. */
+export async function ollamaVision(
+  baseUrl: string,
+  model: string,
+  png: Buffer,
+  prompt: string
+): Promise<string> {
+  const response = await ollamaFetch(
+    baseUrl,
+    '/api/chat',
+    {
+      model,
+      stream: false,
+      // Folga para a imagem (~2.300 tokens a 1600 px) e uma página inteira de texto.
+      ...ollamaOptions({ temperature: 0 }),
+      messages: [{ role: 'user', content: prompt, images: [png.toString('base64')] }]
+    },
+    model
+  )
+  const data = (await response.json()) as { message?: { content?: string } }
+  return data.message?.content?.trim() ?? ''
+}
+
 /** Vetores normalizados (norma 1) dos textos, calculados por um modelo de embedding do Ollama. */
 export async function ollamaEmbed(
   baseUrl: string,

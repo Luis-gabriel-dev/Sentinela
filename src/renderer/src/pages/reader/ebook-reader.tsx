@@ -157,8 +157,11 @@ export function EbookReader({
         view.renderer.setAttribute('max-inline-size', '720px')
         view.renderer.setAttribute('gap', '6%')
         view.renderer.setStyles?.(bookCss(resolved === 'dark', prefs.fontSize))
-        const location = startLocation ?? book.location
-        await view.init({ lastLocation: location, showTextStart: !location })
+        // "section:<índice>" vira o número da seção, que o foliate aceita como destino.
+        const location = startLocation?.startsWith('section:')
+          ? Number(startLocation.slice('section:'.length))
+          : (startLocation ?? book.location)
+        await view.init({ lastLocation: location, showTextStart: location === null })
         if (!cancelled) setReady(true)
       } catch (e) {
         if (!cancelled) setError((e as Error).message || 'formato não suportado ou protegido')

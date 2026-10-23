@@ -1,0 +1,1 @@
+ALTER TABLE `book_ocr_pages` ADD `refined_by` text;

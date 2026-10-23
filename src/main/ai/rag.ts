@@ -4,12 +4,21 @@ import type { Api } from '@shared/api'
 import { ragSearchSchema, ragSettingsUpdateSchema, type RagKind } from '@shared/schemas'
 import type { RagHit, RagStatus } from '@shared/types'
 import type { Db } from '../db/client'
-import { bookHighlights, bookOcrPages, books, notes, ragChunks, ragSources } from '../db/schema'
+import {
+  bookHighlights,
+  bookOcrPages,
+  books,
+  bookTexts,
+  notes,
+  ragChunks,
+  ragSources
+} from '../db/schema'
 import { RAG_CONFIG_KEY, readAiConfig, readRagSettings, setSetting } from './config'
 import { ollamaEmbed, ollamaModels } from './providers'
 
 /*
- * Busca inteligente (RAG). Anotações, destaques e páginas de OCR são cortados em trechos; cada
+ * Busca inteligente (RAG). Anotações, destaques, páginas de OCR e o texto dos livros são cortados
+ * em trechos; cada
  * trecho ganha um vetor calculado por um modelo de embedding do Ollama (sempre local, mesmo quando
  * a conversa usa Claude ou OpenAI). A busca junta duas listas: a dos vetores mais parecidos com a
  * pergunta (significado) e a da FTS5 (palavras exatas), com Reciprocal Rank Fusion. Sem Ollama, ou
@@ -67,6 +76,8 @@ export interface RagSearchOptions {
   limit?: number
   /** Só trechos ligados a estes temas (anotações do tema ou livros do tema). */
   topicIds?: number[]
+  /** Só trechos destes tipos. */
+  kinds?: RagKind[]
   /** Máximo de trechos da mesma origem (evita que uma anotação longa ocupe tudo). */
   perSource?: number
 }
@@ -207,13 +218,44 @@ function collectSources(db: Db): SourceDoc[] {
           .get()?.text ?? ''
     })
   }
+
+  // Texto dos livros: a impressão digital é a data da leitura, sem ler o texto (pode ser muito).
+  const textRows = db
+    .select({
+      bookId: bookTexts.bookId,
+      page: bookTexts.page,
+      readAt: books.textReadAt,
+      title: books.title,
+      topicId: books.topicId,
+      format: books.format
+    })
+    .from(bookTexts)
+    .innerJoin(books, eq(bookTexts.bookId, books.id))
+    .all()
+  for (const p of textRows) {
+    docs.push({
+      key: `book:${p.bookId}:${p.page}`,
+      kind: p.format === 'pdf' ? 'book' : 'ebook',
+      sourceId: p.bookId,
+      highlightId: null,
+      page: p.page,
+      topicId: p.topicId,
+      title: p.title,
+      fingerprint: hash(p.readAt?.getTime(), p.title, p.topicId),
+      text: () =>
+        db
+          .select({ text: bookTexts.text })
+          .from(bookTexts)
+          .where(and(eq(bookTexts.bookId, p.bookId), eq(bookTexts.page, p.page)))
+          .get()?.text ?? ''
+    })
+  }
   return docs
 }
 
 interface VectorCache {
   model: string
   ids: number[]
-  topicIds: (number | null)[]
   dim: number
   data: Float32Array
 }
@@ -374,7 +416,7 @@ export function createRagService(db: Db): { api: Api['rag']; index: RagIndex } {
   const loadVectors = (model: string): VectorCache => {
     if (vectors?.model === model) return vectors
     const rows = db
-      .select({ id: ragChunks.id, topicId: ragChunks.topicId, embedding: ragChunks.embedding })
+      .select({ id: ragChunks.id, embedding: ragChunks.embedding })
       .from(ragChunks)
       .where(eq(ragChunks.embedModel, model))
       .all()
@@ -385,17 +427,34 @@ export function createRagService(db: Db): { api: Api['rag']; index: RagIndex } {
       // Copia byte a byte: o Buffer do SQLite pode não estar alinhado para Float32Array.
       new Uint8Array(data.buffer, i * dim * 4, dim * 4).set(r.embedding!)
     })
-    vectors = { model, ids: rows.map((r) => r.id), topicIds: rows.map((r) => r.topicId), dim, data }
+    vectors = { model, ids: rows.map((r) => r.id), dim, data }
     return vectors
   }
 
+  /** Ids dos trechos que passam nos filtros de tema e de tipo (null = sem filtro). */
+  const allowedIds = ({ topicIds, kinds }: RagSearchOptions): Set<number> | null => {
+    const conditions = [
+      topicIds && inArray(ragChunks.topicId, topicIds),
+      kinds && inArray(ragChunks.kind, kinds)
+    ].filter((c) => c !== undefined)
+    if (!conditions.length) return null
+    return new Set(
+      db
+        .select({ id: ragChunks.id })
+        .from(ragChunks)
+        .where(and(...conditions))
+        .all()
+        .map((r) => r.id)
+    )
+  }
+
   /**
-   * Ids por similaridade com a pergunta (já filtrados por tema e similaridade mínima), ou null
+   * Ids por similaridade com a pergunta (já filtrados e com a similaridade mínima), ou null
    * quando não há vetores para comparar.
    */
   const vectorRanking = async (
     query: string,
-    topicIds: Set<number> | null
+    allowed: Set<number> | null
   ): Promise<number[] | null> => {
     const model = await resolveModel()
     if (!model) return null
@@ -405,8 +464,7 @@ export function createRagService(db: Db): { api: Api['rag']; index: RagIndex } {
     if (q.length !== cache.dim) return null
     const scored: { id: number; similarity: number }[] = []
     for (let i = 0; i < cache.ids.length; i++) {
-      const topic = cache.topicIds[i]
-      if (topicIds && (topic === null || !topicIds.has(topic))) continue
+      if (allowed && !allowed.has(cache.ids[i])) continue
       let dot = 0
       const offset = i * cache.dim
       for (let d = 0; d < cache.dim; d++) dot += cache.data[offset + d] * q[d]
@@ -418,39 +476,40 @@ export function createRagService(db: Db): { api: Api['rag']; index: RagIndex } {
       .map((s) => s.id)
   }
 
-  const wordRanking = (query: string, topicIds: number[] | null, all: boolean): number[] => {
+  const wordRanking = (query: string, allowed: Set<number> | null, all: boolean): number[] => {
     const match = ftsQuery(query, all)
     if (!match) return []
-    const topicFilter = topicIds
-      ? sql`AND rowid IN (SELECT id FROM rag_chunks WHERE topic_id IN ${topicIds})`
-      : sql``
+    // Com filtro, pega mais candidatos para sobrarem os permitidos.
     return db
       .all<{ id: number }>(
         sql`SELECT rowid AS id FROM rag_chunks_fts
-            WHERE rag_chunks_fts MATCH ${match} ${topicFilter}
+            WHERE rag_chunks_fts MATCH ${match}
             ORDER BY bm25(rag_chunks_fts, 2.0, 1.0)
-            LIMIT ${CANDIDATES}`
+            LIMIT ${allowed ? CANDIDATES * 10 : CANDIDATES}`
       )
       .map((r) => r.id)
+      .filter((id) => !allowed || allowed.has(id))
+      .slice(0, CANDIDATES)
   }
 
   const search = async (query: string, options: RagSearchOptions = {}): Promise<RagMatch[]> => {
-    const { limit = 6, topicIds, perSource = 2 } = options
+    const { limit = 6, perSource = 2 } = options
     if (!readRagSettings(db).enabled) return []
-    if (topicIds && !topicIds.length) return []
     // Garante que o que acabou de ser escrito já pode ser achado (ao menos por palavras).
     syncChunks()
+    const allowed = allowedIds(options)
+    if (allowed && !allowed.size) return []
 
     let byMeaning: number[] | null = null
     try {
-      byMeaning = await vectorRanking(query, topicIds ? new Set(topicIds) : null)
+      byMeaning = await vectorRanking(query, allowed)
     } catch (error) {
       problem = `Busca por significado indisponível: ${(error as Error).message}`
     }
     // Por palavras, o trecho precisa ter todos os termos (um termo solto, como "arquivo", traz
     // muita coisa sem relação). Só sem vetores, quando é a única busca, basta um termo.
-    let byWords = wordRanking(query, topicIds ?? null, true)
-    if (!byWords.length && byMeaning === null) byWords = wordRanking(query, topicIds ?? null, false)
+    let byWords = wordRanking(query, allowed, true)
+    if (!byWords.length && byMeaning === null) byWords = wordRanking(query, allowed, false)
 
     const scores = new Map<number, number>()
     for (const ranking of [byMeaning ?? [], byWords]) {
@@ -508,7 +567,8 @@ export function createRagService(db: Db): { api: Api['rag']; index: RagIndex } {
       sources: {
         notes: sourcesLike('note'),
         highlights: sourcesLike('highlight'),
-        ocrPages: sourcesLike('ocr')
+        ocrPages: sourcesLike('ocr'),
+        bookPages: sourcesLike('book')
       },
       running: running !== null,
       problem: settings.enabled ? problem : null

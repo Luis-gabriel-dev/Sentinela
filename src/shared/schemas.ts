@@ -305,9 +305,28 @@ export const mentorCompactSchema = z.object({
 })
 export type MentorCompactInput = z.input<typeof mentorCompactSchema>
 
+// Lembretes (notificações do sistema e bandeja)
+
+export const remindersUpdateSchema = z
+  .object({
+    enabled: z.boolean(),
+    blocks: z.boolean(),
+    /** Antecedência do aviso de bloco da agenda, em minutos. */
+    blockMinutes: z.number().int().min(0).max(120),
+    tasks: z.boolean(),
+    projects: z.boolean(),
+    /** Horário do resumo diário (tarefas importantes e projetos parados), HH:MM. */
+    digestTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Horário inválido'),
+    closeToTray: z.boolean(),
+    openAtLogin: z.boolean()
+  })
+  .partial()
+export type RemindersUpdate = z.input<typeof remindersUpdateSchema>
+
 // Busca inteligente (RAG)
 
-export const RAG_KINDS = ['note', 'highlight', 'ocr'] as const
+/** book = página de PDF; ebook = seção de EPUB/MOBI/AZW3. */
+export const RAG_KINDS = ['note', 'highlight', 'ocr', 'book', 'ebook'] as const
 export type RagKind = (typeof RAG_KINDS)[number]
 
 export const ragSettingsUpdateSchema = z
@@ -320,6 +339,15 @@ export const ragSettingsUpdateSchema = z
 export type RagSettingsUpdate = z.input<typeof ragSettingsUpdateSchema>
 
 export const ragSearchSchema = z.string().trim().min(1).max(1000)
+
+export const bookTextSchema = z.object({
+  bookId: id,
+  /** Página (PDF) ou seção (EPUB/MOBI), a partir de 1. Vazio = livro sem texto (escaneado). */
+  pages: z
+    .array(z.object({ page: z.number().int().min(1), text: z.string().max(500_000) }))
+    .max(20_000)
+})
+export type BookTextInput = z.input<typeof bookTextSchema>
 
 // Anexos (imagens coladas nas anotações)
 

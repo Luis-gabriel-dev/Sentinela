@@ -5,13 +5,14 @@ import type { Api } from '@shared/api'
 import {
   BOOK_EXTENSIONS,
   bookPathsSchema,
+  bookTextSchema,
   bookUpdateSchema,
   coverSchema,
   type BookFormat
 } from '@shared/schemas'
 import type { Book } from '@shared/types'
 import type { Db } from '../db/client'
-import { books } from '../db/schema'
+import { bookTexts, books } from '../db/schema'
 
 type BookRow = typeof books.$inferSelect
 
@@ -135,6 +136,21 @@ export function createBooksService(db: Db, coversDir: string): BooksService {
     async markOpened(id) {
       getRow(id)
       db.update(books).set({ lastOpenedAt: new Date() }).where(eq(books.id, id)).run()
+    },
+
+    async saveText(input) {
+      const { bookId, pages } = bookTextSchema.parse(input)
+      getRow(bookId)
+      db.transaction((tx) => {
+        tx.delete(bookTexts).where(eq(bookTexts.bookId, bookId)).run()
+        // Em lotes: um insert com milhares de linhas passa do limite de parâmetros do SQLite.
+        for (let i = 0; i < pages.length; i += 500) {
+          tx.insert(bookTexts)
+            .values(pages.slice(i, i + 500).map((p) => ({ bookId, ...p })))
+            .run()
+        }
+        tx.update(books).set({ textReadAt: new Date() }).where(eq(books.id, bookId)).run()
+      })
     }
   }
 }

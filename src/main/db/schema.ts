@@ -140,6 +140,8 @@ export const books = sqliteTable(
     progress: real('progress').notNull().default(0),
     location: text('location'),
     lastOpenedAt: integer('last_opened_at', { mode: 'timestamp_ms' }),
+    /** Quando o texto do livro foi lido para a busca inteligente (null = ainda não). */
+    textReadAt: integer('text_read_at', { mode: 'timestamp_ms' }),
     ...timestamps
   },
   (t) => [index('books_folder_idx').on(t.folderId)]
@@ -179,9 +181,30 @@ export const bookOcrPages = sqliteTable(
     lines: text('lines').notNull(),
     /** Confiança média do Tesseract, 0–100. */
     confidence: real('confidence').notNull(),
+    /**
+     * Modelo de visão que reescreveu `text` (páginas de baixa confiança). As linhas (`lines`)
+     * continuam as do Tesseract, que têm as posições para a seleção no leitor.
+     */
+    refinedBy: text('refined_by'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
       .$defaultFn(() => new Date())
+  },
+  (t) => [primaryKey({ columns: [t.bookId, t.page] })]
+)
+
+/**
+ * Texto dos livros, para a busca inteligente: por página no PDF, por seção (capítulo) no
+ * EPUB/MOBI. PDFs escaneados não têm texto aqui; para eles vale o OCR.
+ */
+export const bookTexts = sqliteTable(
+  'book_texts',
+  {
+    bookId: integer('book_id')
+      .notNull()
+      .references(() => books.id, { onDelete: 'cascade' }),
+    page: integer('page').notNull(),
+    text: text('text').notNull()
   },
   (t) => [primaryKey({ columns: [t.bookId, t.page] })]
 )

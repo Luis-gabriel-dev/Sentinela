@@ -12,7 +12,8 @@ import {
   mentorSendSchema,
   suggestScheduleSchema,
   suggestTopicsSchema,
-  type AiProvider
+  type AiProvider,
+  type RagKind
 } from '@shared/schemas'
 import type {
   AiSettings,
@@ -66,7 +67,9 @@ const toMessage = (row: MessageRow): ChatMessage => ({
 const SOURCE_LABEL: Record<RagSource['kind'], (s: Pick<RagSource, 'title' | 'page'>) => string> = {
   note: (s) => `Anotação "${s.title}"`,
   highlight: (s) => `Destaque no livro "${s.title}"${s.page ? `, p. ${s.page}` : ''}`,
-  ocr: (s) => `Livro "${s.title}", p. ${s.page} (texto reconhecido por OCR)`
+  ocr: (s) => `Livro "${s.title}", p. ${s.page} (texto reconhecido por OCR)`,
+  book: (s) => `Livro "${s.title}", p. ${s.page}`,
+  ebook: (s) => `Livro "${s.title}", seção ${s.page}`
 }
 
 /** Instruções da conversa: papel, retrato dos estudos, resumo do que foi compactado e trechos. */
@@ -484,29 +487,34 @@ export function createMentorService(
         if (!tree.all.some((t) => t.id === topicId)) throw new Error('Tema não encontrado')
         const { ai, label } = client()
         const ids = tree.subtreeIds(topicId)
-        // Metade do orçamento vai para o material; o resto fica para o pedido e a resposta. Se o
-        // material do tema não couber inteiro, a busca inteligente escolhe os trechos mais ligados
-        // ao tema e ao foco pedido (incluindo páginas de OCR dos livros do tema).
+        // Metade do orçamento vai para o material; o resto fica para o pedido e a resposta.
         const budget = Math.floor(ai.maxInputChars / 2)
-        const whole = topicMaterial(db, topicId, budget)
-        let material = whole.text
-        if (!whole.complete) {
+        const query = [tree.path(topicId), focus].filter(Boolean).join(': ')
+        /** Trechos da busca inteligente mais ligados ao tema e ao foco, até `room` caracteres. */
+        const relevant = async (kinds: RagKind[] | undefined, room: number): Promise<string[]> => {
           const matches = await rag
-            .search([tree.path(topicId), focus].filter(Boolean).join(': '), {
-              topicIds: ids,
-              limit: 40,
-              perSource: 6
-            })
+            .search(query, { topicIds: ids, kinds, limit: 40, perSource: 6 })
             .catch(() => [])
           const picked: string[] = []
           let size = 0
           for (const m of matches) {
             const piece = `### ${SOURCE_LABEL[m.kind](m)}\n${m.text}\n`
-            if (size + piece.length > budget) break
+            if (size + piece.length > room) break
             picked.push(piece)
             size += piece.length
           }
-          if (picked.length) material = picked.join('\n')
+          return picked
+        }
+        const whole = topicMaterial(db, topicId, budget)
+        let material: string
+        if (whole.complete) {
+          // Coube tudo: o espaço que sobra vai para os trechos dos livros do tema.
+          const fromBooks = await relevant(['book', 'ebook', 'ocr'], budget - whole.text.length)
+          material = [whole.text, ...fromBooks].filter(Boolean).join('\n')
+        } else {
+          // Não coube: a busca escolhe o que mais tem a ver com o tema e o foco pedido.
+          const picked = await relevant(undefined, budget)
+          material = picked.length ? picked.join('\n') : whole.text
         }
         const wrong = db
           .select({ question: exercises.question })
@@ -531,7 +539,7 @@ export function createMentorService(
           focus ? `Foco pedido pelo estudante: ${focus}` : '',
           '',
           material
-            ? 'Material do próprio estudante (anotações e trechos destacados). Baseie as questões ' +
+            ? 'Material do próprio estudante (anotações, destaques e trechos dos livros). Baseie as questões ' +
               'nele e complemente com conhecimento correto do assunto:\n<material>\n' +
               material +
               '\n</material>'

@@ -13,6 +13,7 @@ import {
   SelectValue
 } from '@renderer/components/ui/select'
 import { SourceLink } from '@renderer/components/source-link'
+import { useBookTextProgress } from '@renderer/lib/book-text'
 import { useDebounced } from '@renderer/lib/use-debounced'
 import {
   useAiModels,
@@ -31,6 +32,7 @@ export function RagSettings(): React.JSX.Element | null {
   const reindex = useReindexRag()
   const models = useAiModels(true, 'ollama')
   const embedding = (models.data ?? []).filter((m) => m.kind === 'embedding')
+  const reading = useBookTextProgress()
 
   if (!status) return null
   const { sources } = status
@@ -39,9 +41,10 @@ export function RagSettings(): React.JSX.Element | null {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        A mentora procura nas suas anotações, nos destaques dos livros e nas páginas com OCR os
-        trechos ligados a cada pergunta, e cita de onde tirou. Os vetores são calculados pelo
-        Ollama, neste computador, mesmo quando a conversa usa Claude ou OpenAI.
+        A mentora procura nas suas anotações, nos destaques e no texto dos livros (inclusive páginas
+        com OCR) os trechos ligados a cada pergunta, e cita de onde tirou. O texto dos livros é lido
+        sozinho, em segundo plano. Os vetores são calculados pelo Ollama, neste computador, mesmo
+        quando a conversa usa Claude ou OpenAI.
       </p>
 
       <div className="flex items-center gap-2">
@@ -117,9 +120,17 @@ export function RagSettings(): React.JSX.Element | null {
               <Progress value={progress} className="h-1.5" />
             )}
             <p className="text-xs text-muted-foreground">
-              {sources.notes} anotações · {sources.highlights} destaques · {sources.ocrPages}{' '}
-              páginas com OCR
+              {sources.notes} anotações · {sources.highlights} destaques · {sources.bookPages}{' '}
+              páginas e capítulos de livros · {sources.ocrPages} páginas com OCR
             </p>
+            {reading && (
+              <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="size-3.5 animate-spin" />
+                Lendo o texto de “{reading.title}”
+                {reading.total > 0 && ` (${reading.done} de ${reading.total})`}
+                {reading.remaining > 1 && ` · faltam ${reading.remaining - 1} livros depois`}
+              </p>
+            )}
           </div>
 
           <SearchTester />

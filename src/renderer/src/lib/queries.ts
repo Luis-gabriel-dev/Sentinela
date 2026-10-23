@@ -12,6 +12,7 @@ import type { AiProvider, DateRange, TaskFilter } from '@shared/schemas'
 import type {
   AiSettings,
   AppInfo,
+  BackupStatus,
   BlockCheckin,
   ChatMessage,
   ContextUsage,
@@ -19,6 +20,7 @@ import type {
   ModelInfo,
   RagHit,
   RagStatus,
+  ReminderStatus,
   ExerciseSet,
   ExerciseSetSummary,
   Book,
@@ -54,6 +56,8 @@ export const keys = {
   ai: ['ai'],
   aiModels: (provider?: AiProvider): QueryKey => ['ai', 'models', provider ?? 'active'],
   rag: ['rag'],
+  reminders: ['reminders'],
+  backup: ['backup'],
   ragSearch: (query: string): QueryKey => ['rag', 'search', query],
   conversations: ['mentor', 'conversations'],
   messages: (conversationId: number): QueryKey => ['mentor', 'messages', conversationId],
@@ -160,6 +164,12 @@ export const useRagSearch = (query: string): UseQueryResult<RagHit[]> =>
     retry: false,
     placeholderData: (previous) => previous
   })
+
+export const useBackupStatus = (): UseQueryResult<BackupStatus> =>
+  useQuery({ queryKey: keys.backup, queryFn: () => api.backup.status() })
+
+export const useReminders = (): UseQueryResult<ReminderStatus> =>
+  useQuery({ queryKey: keys.reminders, queryFn: () => api.reminders.status() })
 
 export const useContextUsage = (conversationId: number | null): UseQueryResult<ContextUsage> =>
   useQuery({
@@ -281,6 +291,12 @@ export const useDeleteConversation = mutationFor('mentor', 'deleteConversation',
 ])
 // ['mentor'] cobre a lista de conversas, as mensagens e o uso do contexto.
 export const useCompactConversation = mutationFor('mentor', 'compact', [['mentor']])
+
+export const useCreateBackup = mutationFor('backup', 'create', [keys.backup])
+export const usePickBackup = mutationFor('backup', 'pick', [])
+
+export const useUpdateReminders = mutationFor('reminders', 'updateSettings', [keys.reminders])
+export const useTestReminder = mutationFor('reminders', 'test', [])
 
 export const useUpdateRagSettings = mutationFor('rag', 'updateSettings', [keys.rag])
 export const useReindexRag = mutationFor('rag', 'reindex', [keys.rag])

@@ -3,11 +3,13 @@ import type {
   AiProvider,
   AiSettingsUpdate,
   AttachmentInput,
+  BookTextInput,
   ExerciseAnswerInput,
   GenerateExercisesInput,
   MentorCompactInput,
   MentorSendInput,
   RagSettingsUpdate,
+  RemindersUpdate,
   SuggestScheduleInput,
   SuggestTopicsInput,
   BookUpdate,
@@ -31,6 +33,8 @@ import type {
 import type {
   AddBooksResult,
   AiSettings,
+  BackupInfo,
+  BackupStatus,
   ChatMessage,
   ContextUsage,
   Conversation,
@@ -38,6 +42,7 @@ import type {
   ModelInfo,
   RagHit,
   RagStatus,
+  ReminderStatus,
   ExerciseSet,
   ExerciseSetSummary,
   ScheduleSuggestion,
@@ -120,6 +125,8 @@ export interface Api {
     /** Salva a capa (JPEG) gerada pela interface. */
     setCover(id: number, data: Uint8Array): Promise<void>
     markOpened(id: number): Promise<void>
+    /** Guarda o texto do livro (lido pela interface) para a busca inteligente. */
+    saveText(input: BookTextInput): Promise<void>
   }
   highlights: {
     list(bookId: number): Promise<BookHighlight[]>
@@ -134,6 +141,13 @@ export interface Api {
     recognizePage(input: OcrPageInput): Promise<OcrPage>
     /** Apaga o texto reconhecido do livro (para refazer). */
     clear(bookId: number): Promise<void>
+    /** Modelo de visão do Ollama que vai melhorar as páginas (null = nenhum instalado). */
+    visionModel(): Promise<string | null>
+    /**
+     * Relê com o modelo de visão uma página já reconhecida (imagem PNG) e troca o texto dela.
+     * As posições das linhas continuam as do Tesseract.
+     */
+    refinePage(input: OcrPageInput): Promise<OcrPage>
   }
   github: {
     status(): Promise<GithubStatus>
@@ -163,6 +177,26 @@ export interface Api {
      * No Ollama, só os já baixados.
      */
     listModels(provider?: AiProvider): Promise<ModelInfo[]>
+  }
+  backup: {
+    status(): Promise<BackupStatus>
+    /**
+     * Escolhe uma pasta e grava nela um backup (banco + imagens das anotações + capas).
+     * Devolve a pasta criada, ou null se a escolha foi cancelada.
+     */
+    create(): Promise<string | null>
+    /** Escolhe um backup e diz o que há nele (null se cancelado). Não muda nada. */
+    pick(): Promise<BackupInfo | null>
+    /** Troca os dados atuais pelos do backup (guardando antes uma cópia) e reinicia o app. */
+    restore(path: string): Promise<void>
+    /** Abre a pasta das cópias automáticas no Explorer. */
+    openAutoFolder(): Promise<void>
+  }
+  reminders: {
+    status(): Promise<ReminderStatus>
+    updateSettings(input: RemindersUpdate): Promise<ReminderStatus>
+    /** Mostra uma notificação de exemplo. */
+    test(): Promise<void>
   }
   rag: {
     status(): Promise<RagStatus>
@@ -209,7 +243,9 @@ export const IPC_CHANNEL = 'sentinela:api'
 
 /** Eventos do processo principal para a interface (main → renderer). */
 export const AI_STREAM_CHANNEL = 'sentinela:ai-stream'
-export const EVENT_CHANNELS = [AI_STREAM_CHANNEL] as const
+/** Pede à interface para ir a uma rota (ex.: clique numa notificação). Payload: a rota. */
+export const NAVIGATE_CHANNEL = 'sentinela:navigate'
+export const EVENT_CHANNELS = [AI_STREAM_CHANNEL, NAVIGATE_CHANNEL] as const
 
 /** Protocolo próprio para servir arquivos locais (anexos, capas, livros) à interface. */
 export const FILE_PROTOCOL = 'sentinela'

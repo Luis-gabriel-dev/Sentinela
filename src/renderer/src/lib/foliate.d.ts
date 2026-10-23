@@ -16,6 +16,8 @@ declare module 'foliate-js/view.js' {
     toc?: TocItem[] | null
     dir?: string
     getCover?: () => Promise<Blob | null> | Blob | null
+    /** Seções (capítulos/arquivos) na ordem de leitura. */
+    sections?: { createDocument?: () => Promise<Document> }[]
   }
 
   export interface RelocateDetail {
@@ -39,7 +41,7 @@ declare module 'foliate-js/view.js' {
     lastLocation: RelocateDetail | null
     open(file: File | Blob): Promise<void>
     close(): void
-    init(options: { lastLocation?: string | null; showTextStart?: boolean }): Promise<void>
+    init(options: { lastLocation?: string | number | null; showTextStart?: boolean }): Promise<void>
     goTo(target: string | number): Promise<unknown>
     goToFraction(fraction: number): Promise<void>
     goLeft(): Promise<void>

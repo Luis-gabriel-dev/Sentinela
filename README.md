@@ -105,7 +105,11 @@ Quando um PDF não tem texto, o leitor oferece "Reconhecer texto (OCR)":
    seleção, cópia, busca e destaques funcionam como num PDF comum.
 
 O processo pode ser pausado e continua de onde parou. Páginas com confiança abaixo de 60%
-aparecem no menu "OCR" do leitor.
+aparecem no menu "OCR" do leitor, com a opção **"Melhorar com IA"**: a página é relida por um
+modelo de visão do Ollama (automático: `qwen2.5vl:7b`, `qwen3-vl`...; imagem reduzida a 1600 px
+para caber no contexto) e o texto dela é trocado (`book_ocr_pages.refined_by` guarda o modelo). As
+linhas com posição continuam as do Tesseract, então a seleção no leitor não muda; o texto novo
+vale para a busca inteligente e para a mentora.
 
 > O tesseract.js 7 tem um bug ao receber os idiomas em memória (`{ code, data }`), por isso os
 > arquivos são copiados para `tessdata\` e lidos por `langPath` (veja `src/main/services/ocr.ts`).
@@ -132,6 +136,42 @@ aparecem no menu "OCR" do leitor.
   cache na tabela `projects`; a página atualiza sozinha se o cache tiver mais de 30 minutos.
 - Um projeto fica "parado" quando passa do limite de dias sem commit configurado nele
   (padrão: 7). Os parados aparecem na página Hoje.
+
+### Backup
+
+`src/main/backup.ts`, em Configurações > Dados e backup:
+
+- **Fazer backup**: grava numa pasta escolhida `Sentinela backup AAAA-MM-DD HHMM/` com o banco
+  (`VACUUM INTO`: cópia consistente mesmo com o app aberto; copiar o `.db` direto pode pegar uma
+  escrita pela metade), `attachments/` (imagens das anotações) e `covers/`. Os arquivos dos livros
+  não entram: ficam onde o estudante guardou.
+- **Restaurar**: confere que a pasta tem um banco do Sentinela e mostra o que há nele (temas,
+  anotações, tarefas, livros, conversas) antes de confirmar. Guarda os dados atuais em
+  `backups/antes de restaurar ...`, troca o banco e as pastas e reinicia o app (as migrations
+  rodam ao abrir, então backups de versões antigas funcionam).
+- **Cópia automática semanal** do banco em `<dados>/backups/auto ...` (guarda as 4 mais
+  recentes), um minuto depois de abrir o app.
+
+### Lembretes e bandeja
+
+- `src/main/reminders.ts` verifica a cada 30 s e mostra notificações nativas (`Notification` do
+  Electron):
+  - **blocos da agenda** de hoje, com a antecedência escolhida (padrão 10 min), se ainda não foram
+    marcados como feitos;
+  - **resumo do dia** no horário escolhido (padrão 08:00), ou ao abrir o app se o horário já
+    passou: tarefas urgentes/altas atrasadas, de hoje ou de amanhã, e projetos parados (sincroniza
+    o GitHub antes).
+- Cada aviso sai uma vez só: as chaves enviadas ficam em `settings` (`reminders.sent`, guardadas
+  por 3 dias), então reiniciar o app não repete.
+- Clicar na notificação abre a janela na tela certa: o main manda a rota pelo canal
+  `sentinela:navigate` e o `AppShell` navega.
+- **Bandeja** (`src/main/tray.ts`): com "continuar na bandeja" ligado, fechar a janela só a esconde
+  (os lembretes continuam); clique no ícone abre, o menu liga/desliga os lembretes e tem "Sair".
+  Abrir o app de novo (segunda instância) mostra a janela escondida.
+- **Abrir com o Windows**: `app.setLoginItemSettings` com `--hidden` (começa só na bandeja). Só no
+  app instalado; no modo dev registraria o `electron.exe` solto.
+- No modo dev as notificações aparecem como "Electron"; no app instalado, como "Sentinela" (o
+  instalador cria o atalho com o AppUserModelID `com.sentinela.app`).
 
 ### IA mentora
 
@@ -171,8 +211,13 @@ aparecem no menu "OCR" do leitor.
   `status` do streaming. O estudante também pode compactar quando quiser (botão Compactar, com
   instruções opcionais do que preservar), e vê quanto do contexto a conversa ocupa. As mensagens
   continuam salvas e visíveis; uma divisória marca até onde a IA recebe só o resumo.
-- **Busca inteligente / RAG** (`src/main/ai/rag.ts`): anotações, destaques e páginas com OCR são
-  cortados em trechos (~1.200 caracteres, com sobreposição) nas tabelas `rag_chunks` e
+- **Texto dos livros** (`src/renderer/src/lib/book-text.ts`): em segundo plano, um livro de cada
+  vez, a interface lê o texto dos livros ainda não lidos (pdf.js por página no PDF; foliate-js por
+  seção no EPUB/MOBI/AZW3) e manda para `books.saveText`, que grava em `book_texts` e marca
+  `books.text_read_at` (lido uma vez só; PDF escaneado fica sem texto e usa o OCR). O progresso
+  aparece em Configurações > Busca inteligente.
+- **Busca inteligente / RAG** (`src/main/ai/rag.ts`): anotações, destaques, páginas com OCR e o
+  texto dos livros são cortados em trechos (~1.200 caracteres, com sobreposição) nas tabelas `rag_chunks` e
   `rag_sources` (impressão digital por origem: só o que mudou é refeito, alguns segundos depois de
   cada alteração). Os vetores vêm de um modelo de embedding do **Ollama**, sempre local, mesmo
   com a conversa no Claude ou na OpenAI (automático: `bge-m3`, que entende bem português). A
@@ -180,9 +225,11 @@ aparecem no menu "OCR" do leitor.
   `rag_chunks_fts` (todos os termos) por Reciprocal Rank Fusion. Os vetores são comparados em
   memória, sem extensão nativa (milissegundos para dezenas de milhares de trechos). Sem Ollama, a
   busca segue só por palavras. A resposta guarda os trechos usados (`ai_messages.sources`) e a
-  interface mostra as fontes com link para a anotação ou para o livro no destaque/página
-  (`/biblioteca/:id?destaque=` ou `?pagina=`). A mesma busca aparece em Anotações ("Relacionadas
-  por significado") e em Configurações (testar a busca).
+  interface mostra as fontes com link para a anotação ou para o livro no destaque, página ou
+  seção (`/biblioteca/:id?destaque=`, `?pagina=` ou `?secao=`). A mesma busca aparece em
+  Anotações ("Relacionadas por significado") e em Configurações (testar a busca). Os exercícios
+  usam as anotações e os destaques do tema e completam com os trechos dos livros do tema mais
+  ligados ao foco pedido.
 - Tudo que a IA devolve é conferido em código antes de gravar ou mostrar: tópicos duplicados,
   blocos fora do horário ou em conflito com a agenda, alternativas e índices inválidos.
 - Sugestões de tópicos e de agenda **não são gravadas** sozinhas: a interface mostra e o
