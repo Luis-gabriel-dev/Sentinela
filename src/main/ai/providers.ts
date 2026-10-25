@@ -402,7 +402,8 @@ function ollamaClient(baseUrl: string, model: string): AiClient {
       const response = await post('/api/chat', {
         model,
         stream: true,
-        ...ollamaOptions(),
+        // Abaixo do padrão do Ollama (0,8): o qwen2.5 às vezes troca de idioma no meio da frase.
+        ...ollamaOptions({ temperature: 0.6 }),
         messages: [{ role: 'system', content: system }, ...messages]
       })
       // Resposta em NDJSON: um objeto JSON por linha.

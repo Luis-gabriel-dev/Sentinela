@@ -222,7 +222,11 @@ vale para a busca inteligente e para a mentora.
   cada alteração). Os vetores vêm de um modelo de embedding do **Ollama**, sempre local, mesmo
   com a conversa no Claude ou na OpenAI (automático: `bge-m3`, que entende bem português). A
   busca junta os vetores mais parecidos (similaridade ≥ 0,5, calibrada no bge-m3) com a FTS5
-  `rag_chunks_fts` (todos os termos) por Reciprocal Rank Fusion. Os vetores são comparados em
+  `rag_chunks_fts` por Reciprocal Rank Fusion. Na FTS, cada termo pesa pela raridade (IDF) e o
+  trecho precisa cobrir metade do peso da pergunta: "efêmeras" conta muito, "segundo" quase nada,
+  e termos que não existem no índice também pesam (pergunta sobre algo fora dos dados não acha
+  nada). Isso importa quando há livros inteiros indexados: com um romance no índice, frases
+  genéricas chegam perto da similaridade de corte. Os vetores são comparados em
   memória, sem extensão nativa (milissegundos para dezenas de milhares de trechos). Sem Ollama, a
   busca segue só por palavras. A resposta guarda os trechos usados (`ai_messages.sources`) e a
   interface mostra as fontes com link para a anotação ou para o livro no destaque, página ou

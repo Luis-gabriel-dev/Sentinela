@@ -104,7 +104,13 @@ export function useOcr(bookId: number, getPdf: () => PDFDocumentProxy | null): O
         )
         setRefining((r) => r && { ...r, done: r.done + 1 })
       }
-      if (!cancelled.current) toast.success(`Texto de ${todo.length} páginas melhorado com IA`)
+      if (!cancelled.current) {
+        toast.success(
+          todo.length === 1
+            ? 'Texto da página melhorado com IA'
+            : `Texto de ${todo.length} páginas melhorado com IA`
+        )
+      }
     } catch (error) {
       toast.error(`Melhoria interrompida: ${(error as Error).message}`)
     } finally {

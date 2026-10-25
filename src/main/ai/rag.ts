@@ -127,17 +127,36 @@ export function chunkText(text: string): string[] {
   return chunks.filter(Boolean)
 }
 
-/**
- * Termos da pergunta para a FTS5: palavras com 3+ letras, fora as muito comuns, como prefixo.
- * `all`: o trecho precisa ter todos os termos; senão, basta um.
- */
-function ftsQuery(query: string, all: boolean): string {
-  const terms = query
+/** Termos da pergunta para a FTS5: palavras com 3+ letras, fora as muito comuns. */
+const queryTerms = (query: string): string[] => [
+  ...new Set(
+    query
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((t) => t.length >= 3 && !STOPWORDS.has(t))
+  )
+]
+
+/** Expressão da FTS5 com os termos como prefixo. `all`: todos; senão, basta um. */
+const ftsMatch = (terms: string[], all: boolean): string =>
+  terms.map((t) => `"${t}"*`).join(all ? ' ' : ' OR ')
+
+/** Minúsculas e sem acentos, como o tokenizador da FTS5 ("efêmeras" ≈ "efemeras"). */
+const fold = (text: string): string =>
+  text
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
     .toLowerCase()
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter((t) => t.length >= 3 && !STOPWORDS.has(t))
-  return [...new Set(terms)].map((t) => `"${t}"*`).join(all ? ' ' : ' OR ')
-}
+
+/**
+ * Parte mínima do "peso" da pergunta que o trecho precisa cobrir para contar como achado por
+ * palavras. Cada termo pesa pela raridade (IDF): "efêmeras" e "portas" dizem do que a pergunta
+ * trata; "segundo" e "partir" aparecem em qualquer texto. Termos que nem existem no índice pesam o
+ * máximo: se a pergunta é sobre algo que não está nos dados, nenhum trecho cobre o suficiente.
+ */
+const MIN_COVERAGE = 0.5
+/** Sem vetores a busca por palavras é a única, então aceita cobrir menos. */
+const MIN_COVERAGE_ALONE = 0.34
 
 /** Tudo o que pode ir para o índice, com uma impressão digital barata de calcular. */
 function collectSources(db: Db): SourceDoc[] {
@@ -476,20 +495,54 @@ export function createRagService(db: Db): { api: Api['rag']; index: RagIndex } {
       .map((s) => s.id)
   }
 
-  const wordRanking = (query: string, allowed: Set<number> | null, all: boolean): number[] => {
-    const match = ftsQuery(query, all)
-    if (!match) return []
-    // Com filtro, pega mais candidatos para sobrarem os permitidos.
-    return db
-      .all<{ id: number }>(
-        sql`SELECT rowid AS id FROM rag_chunks_fts
-            WHERE rag_chunks_fts MATCH ${match}
-            ORDER BY bm25(rag_chunks_fts, 2.0, 1.0)
-            LIMIT ${allowed ? CANDIDATES * 10 : CANDIDATES}`
-      )
-      .map((r) => r.id)
-      .filter((id) => !allowed || allowed.has(id))
+  /**
+   * Por palavras: trechos que cobrem pelo menos `minCoverage` do peso da pergunta (veja
+   * MIN_COVERAGE), dos que cobrem mais para os que cobrem menos.
+   */
+  const wordRanking = (
+    query: string,
+    allowed: Set<number> | null,
+    minCoverage: number
+  ): number[] => {
+    const terms = queryTerms(query)
+    if (!terms.length) return []
+    const chunksWith = (term: string): number =>
+      db.get<{ n: number }>(
+        sql`SELECT count(*) AS n FROM rag_chunks_fts WHERE rag_chunks_fts MATCH ${ftsMatch([term], true)}`
+      )?.n ?? 0
+    const total = db.select({ n: count() }).from(ragChunks).get()?.n ?? 0
+    const weighted = terms.map((term) => {
+      const df = chunksWith(term)
+      return { term, folded: fold(term), df, weight: Math.log((total + 1) / (df + 0.5)) }
+    })
+    const present = weighted.filter((t) => t.df > 0)
+    if (!present.length) return []
+    const totalWeight = weighted.reduce((sum, t) => sum + t.weight, 0)
+
+    // Candidatos: trechos com qualquer termo, na ordem do bm25; a cobertura decide quem fica.
+    const rows = db.all<{ id: number; title: string; text: string }>(
+      sql`SELECT c.id AS id, c.title AS title, c.text AS text
+          FROM rag_chunks_fts f JOIN rag_chunks c ON c.id = f.rowid
+          WHERE rag_chunks_fts MATCH ${ftsMatch(
+            present.map((t) => t.term),
+            false
+          )}
+          ORDER BY bm25(rag_chunks_fts, 2.0, 1.0)
+          LIMIT 200`
+    )
+    return rows
+      .filter((r) => !allowed || allowed.has(r.id))
+      .map((r) => {
+        const words = fold(`${r.title} ${r.text}`).split(/[^\p{L}\p{N}]+/u)
+        const covered = present
+          .filter((t) => words.some((w) => w.startsWith(t.folded)))
+          .reduce((sum, t) => sum + t.weight, 0)
+        return { id: r.id, coverage: covered / totalWeight }
+      })
+      .filter((r) => r.coverage >= minCoverage)
+      .toSorted((a, b) => b.coverage - a.coverage)
       .slice(0, CANDIDATES)
+      .map((r) => r.id)
   }
 
   const search = async (query: string, options: RagSearchOptions = {}): Promise<RagMatch[]> => {
@@ -506,10 +559,12 @@ export function createRagService(db: Db): { api: Api['rag']; index: RagIndex } {
     } catch (error) {
       problem = `Busca por significado indisponível: ${(error as Error).message}`
     }
-    // Por palavras, o trecho precisa ter todos os termos (um termo solto, como "arquivo", traz
-    // muita coisa sem relação). Só sem vetores, quando é a única busca, basta um termo.
-    let byWords = wordRanking(query, allowed, true)
-    if (!byWords.length && byMeaning === null) byWords = wordRanking(query, allowed, false)
+    // Sem vetores, a busca por palavras é a única e pode ser menos exigente.
+    const byWords = wordRanking(
+      query,
+      allowed,
+      byMeaning === null ? MIN_COVERAGE_ALONE : MIN_COVERAGE
+    )
 
     const scores = new Map<number, number>()
     for (const ranking of [byMeaning ?? [], byWords]) {
