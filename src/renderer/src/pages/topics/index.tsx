@@ -1,5 +1,15 @@
 import { useMemo, useState } from 'react'
-import { ChevronRight, Pencil, Plus, Sparkles, Target, Trash2 } from 'lucide-react'
+import { Link } from 'react-router'
+import {
+  BookOpen,
+  ChevronRight,
+  FileUp,
+  Pencil,
+  Plus,
+  Sparkles,
+  Target,
+  Trash2
+} from 'lucide-react'
 import { TopicsIcon } from '@renderer/components/icons'
 import type { Topic } from '@shared/types'
 import { Button } from '@renderer/components/ui/button'
@@ -11,20 +21,26 @@ import { EmptyState, PageHeader } from '@renderer/components/page-header'
 import { useRemoveTopic, useTopics, useUpdateTopic } from '@renderer/lib/queries'
 import { buildTopicTree, topicProgress, type TopicNode } from '@renderer/lib/topics'
 import { cn } from '@renderer/lib/utils'
+import { ImportOutlineDialog } from './import-outline-dialog'
 import { SuggestTopicsDialog } from './suggest-topics-dialog'
 import { TopicDialog } from './topic-dialog'
 
 type DialogState = { open: false } | { open: true; topic?: Topic; parentId?: number | null }
 
+/** Do 3º nível para baixo a árvore começa recolhida (um livro importado tem centenas de itens). */
+const COLLAPSED_FROM_DEPTH = 2
+
 export function TopicsPage(): React.JSX.Element {
   const { data: topics = [], isLoading } = useTopics()
   const tree = useMemo(() => buildTopicTree(topics), [topics])
   const [dialog, setDialog] = useState<DialogState>({ open: false })
-  const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
+  /** Itens abertos ou fechados à mão (o contrário do padrão do nível deles). */
+  const [toggled, setToggled] = useState<Set<number>>(new Set())
   const [suggesting, setSuggesting] = useState<Topic | null>(null)
+  const [importing, setImporting] = useState(false)
 
   const toggle = (id: number): void =>
-    setCollapsed((prev) => {
+    setToggled((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -33,7 +49,7 @@ export function TopicsPage(): React.JSX.Element {
 
   const actions = {
     toggle,
-    isCollapsed: (id: number) => collapsed.has(id),
+    isCollapsed: (node: TopicNode) => node.depth >= COLLAPSED_FROM_DEPTH !== toggled.has(node.id),
     addChild: (parentId: number) => setDialog({ open: true, parentId }),
     edit: (topic: Topic) => setDialog({ open: true, topic }),
     suggest: (topic: Topic) => setSuggesting(topic)
@@ -45,15 +61,21 @@ export function TopicsPage(): React.JSX.Element {
         title="Temas e progresso"
         description="Organize seus estudos em temas, assuntos e tópicos."
         actions={
-          <Button onClick={() => setDialog({ open: true, parentId: null })}>
-            <Plus /> Novo tema
-          </Button>
+          <>
+            <Button variant="outline" onClick={() => setImporting(true)}>
+              <FileUp /> Importar sumário
+            </Button>
+            <Button onClick={() => setDialog({ open: true, parentId: null })}>
+              <Plus /> Novo tema
+            </Button>
+          </>
         }
       />
 
       {!isLoading && tree.length === 0 ? (
         <EmptyState icon={<TopicsIcon />} title="Nenhum tema ainda">
-          Crie temas grandes como Cybersegurança ou Programação e divida em assuntos e tópicos.
+          Crie temas grandes como Cybersegurança ou Programação e divida em assuntos e tópicos, ou
+          importe o sumário de um livro ou curso.
         </EmptyState>
       ) : (
         <div className="grid gap-4">
@@ -61,7 +83,13 @@ export function TopicsPage(): React.JSX.Element {
             <section key={root.id} className="overflow-hidden rounded-xl border bg-card">
               <div className="h-1" style={{ background: root.color }} />
               <div className="p-2">
-                <TopicItem node={root} parent={null} actions={actions} />
+                <TopicItem
+                  node={root}
+                  parent={null}
+                  inTracked={false}
+                  ancestorDone={false}
+                  actions={actions}
+                />
               </div>
             </section>
           ))}
@@ -78,13 +106,14 @@ export function TopicsPage(): React.JSX.Element {
         topic={suggesting}
         onOpenChange={(open) => !open && setSuggesting(null)}
       />
+      <ImportOutlineDialog open={importing} onOpenChange={setImporting} />
     </>
   )
 }
 
 interface ItemActions {
   toggle: (id: number) => void
-  isCollapsed: (id: number) => boolean
+  isCollapsed: (node: TopicNode) => boolean
   addChild: (parentId: number) => void
   edit: (topic: Topic) => void
   suggest: (topic: Topic) => void
@@ -93,20 +122,35 @@ interface ItemActions {
 function TopicItem({
   node,
   parent,
+  inTracked,
+  ancestorDone,
   actions
 }: {
   node: TopicNode
   parent: TopicNode | null
+  /** Algum tema acima acompanha o progresso: este pode ser marcado como estudado. */
+  inTracked: boolean
+  /** Um tema acima foi marcado inteiro como estudado (ex.: o capítulo todo). */
+  ancestorDone: boolean
   actions: ItemActions
 }): React.JSX.Element {
   const update = useUpdateTopic()
   const remove = useRemoveTopic()
   const hasChildren = node.children.length > 0
-  const collapsed = actions.isCollapsed(node.id)
-  const isCheckable = parent?.trackProgress === true
-  const done = node.completedAt !== null
+  const collapsed = actions.isCollapsed(node)
+  const isCheckable = inTracked
   const progress = node.trackProgress ? topicProgress(node) : null
+  // Capítulo (tópico com subtópicos) dentro de um tema acompanhado: mostra "3/7".
+  const section = isCheckable && hasChildren ? topicProgress(node) : null
+  const done =
+    node.completedAt !== null ||
+    ancestorDone ||
+    (section !== null && section.total > 0 && section.done === section.total)
   const isRoot = parent === null
+  const bookHref =
+    node.bookId !== null
+      ? `/biblioteca/${node.bookId}${node.bookLocation ? `?${node.bookLocation}` : ''}`
+      : null
 
   return (
     <div>
@@ -129,8 +173,9 @@ function TopicItem({
         {isCheckable ? (
           <Checkbox
             checked={done}
+            disabled={ancestorDone}
             onCheckedChange={(c) => update.mutate([node.id, { completed: c === true }])}
-            aria-label="Tópico dominado"
+            aria-label={hasChildren ? 'Marcar tudo como estudado' : 'Tópico dominado'}
           />
         ) : (
           <span className="size-3 shrink-0 rounded-full" style={{ background: node.color }} />
@@ -147,6 +192,26 @@ function TopicItem({
             >
               {node.name}
             </span>
+            {section && section.total > 0 && (
+              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                {node.completedAt !== null || ancestorDone ? section.total : section.done}/
+                {section.total}
+              </span>
+            )}
+            {bookHref && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link
+                    to={bookHref}
+                    aria-label="Abrir no livro"
+                    className="shrink-0 text-muted-foreground hover:text-primary"
+                  >
+                    <BookOpen className="size-3.5" />
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent>Abrir no livro</TooltipContent>
+              </Tooltip>
+            )}
           </div>
           {node.description && (
             <p className="truncate text-xs text-muted-foreground">{node.description}</p>
@@ -180,7 +245,7 @@ function TopicItem({
                 style={{ ['--progress-color' as string]: node.color }}
               />
             </div>
-            <span className="w-20 text-right text-xs text-muted-foreground tabular-nums">
+            <span className="w-24 text-right text-xs whitespace-nowrap text-muted-foreground tabular-nums">
               {progress.done}/{progress.total} · {progress.percent}%
             </span>
           </div>
@@ -241,7 +306,14 @@ function TopicItem({
       {hasChildren && !collapsed && (
         <div>
           {node.children.map((child) => (
-            <TopicItem key={child.id} node={child} parent={node} actions={actions} />
+            <TopicItem
+              key={child.id}
+              node={child}
+              parent={node}
+              inTracked={inTracked || node.trackProgress}
+              ancestorDone={ancestorDone || (inTracked && node.completedAt !== null)}
+              actions={actions}
+            />
           ))}
         </div>
       )}

@@ -137,6 +137,36 @@ vale para a busca inteligente e para a mentora.
 - Um projeto fica "parado" quando passa do limite de dias sem commit configurado nele
   (padrão: 7). Os parados aparecem na página Hoje.
 
+### Importar sumário (temas a partir de livros e cursos)
+
+Em Temas e progresso > "Importar sumário" (ou no menu de um livro da Biblioteca > "Criar temas
+pelo sumário"), um sumário vira uma árvore de temas de uma vez:
+
+- **PDF com marcadores**: os marcadores (índice lateral do PDF) com a página de cada item; cada
+  tema guarda `topics.book_id` e `book_location` (`pagina=45`) e abre o livro ali. Sem
+  marcadores, lê o texto das primeiras 40 páginas.
+- **EPUB/MOBI/AZW3**: o sumário do livro (`book_location` = `href=...`, aberto pelo leitor).
+- **Markdown, TXT, texto colado e planilha (CSV, XLSX)**: `src/renderer/src/lib/outline-parse.ts`
+  reconhece numeração ("3", "3.1", "3.1.2"), marcadores ("Capítulo 3", "Parte II", "Módulo 2",
+  "Aula 5", com nível pela ordem em que aparecem), títulos e listas de Markdown e colunas de
+  planilha; junta títulos quebrados em duas linhas e tira pontilhados, números de página e
+  durações de aula. Não usa IA: o sumário inteiro do Kurose (221 itens) sai em milissegundos.
+- **Sem estrutura reconhecível** (lista de aulas copiada de um site, por exemplo): "Organizar
+  com IA" (`mentor.structureOutline`) pede ao modelo a lista com o nível de cada item, em partes
+  se o texto for longo.
+- A **prévia** em árvore deixa desmarcar itens ("Resumo", "Referências", "Índice"... já vêm
+  desmarcados), escolher até que nível importar, manter ou não a numeração e corrigir o
+  agrupamento com as setas de nível (o item leva os subitens junto). `topics.importOutline` cria
+  tudo numa transação.
+- Um arquivo que já está na Biblioteca (mesmo caminho) é reconhecido e os temas ficam ligados a
+  ele. Tirar o livro da biblioteca mantém os temas (só o link some).
+
+**Progresso pelo nível mais fundo** (`src/shared/progress.ts`, usado na interface e no retrato
+da mentora): a barra de um tema acompanhado conta os tópicos sem subtópicos de toda a subárvore
+(num livro, as subseções). Qualquer item dentro de um tema acompanhado pode ser marcado; marcar
+um capítulo conta todos os tópicos dele, na data em que foi marcado (vale para a meta semanal).
+Do terceiro nível para baixo a árvore começa recolhida.
+
 ### Backup
 
 `src/main/backup.ts`, em Configurações > Dados e backup:

@@ -22,6 +22,7 @@ import { cn } from '@renderer/lib/utils'
 import { BookCard, BookCover } from './book-card'
 import { BookDialog } from './book-dialog'
 import { FolderDialog } from './folder-dialog'
+import { ImportOutlineDialog } from '../topics/import-outline-dialog'
 
 type FolderFilter = 'all' | 'none' | number
 type Sort = 'recent' | 'title' | 'added'
@@ -66,6 +67,7 @@ export function LibraryPage(): React.JSX.Element {
   const [sort, setSort] = useState<Sort>('recent')
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<Book | null>(null)
+  const [importingFrom, setImportingFrom] = useState<Book | null>(null)
   const [folderDialog, setFolderDialog] = useState<{ folder?: LibraryFolder } | null>(null)
   const [dragging, setDragging] = useState(false)
 
@@ -258,6 +260,7 @@ export function LibraryPage(): React.JSX.Element {
               book={book}
               folder={book.folderId !== null ? foldersById.get(book.folderId) : undefined}
               onEdit={() => setEditing(book)}
+              onImportOutline={() => setImportingFrom(book)}
             />
           ))}
         </div>
@@ -274,6 +277,11 @@ export function LibraryPage(): React.JSX.Element {
         </div>
       )}
 
+      <ImportOutlineDialog
+        open={importingFrom !== null}
+        onOpenChange={(open) => !open && setImportingFrom(null)}
+        book={importingFrom}
+      />
       <BookDialog
         book={editing && (books.find((b) => b.id === editing.id) ?? null)}
         onOpenChange={(open) => !open && setEditing(null)}

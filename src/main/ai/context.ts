@@ -1,4 +1,5 @@
 import { desc, eq, inArray, isNull } from 'drizzle-orm'
+import { subtreeProgress, type SubtreeProgress } from '@shared/progress'
 import type { Db } from '../db/client'
 import {
   bookHighlights,
@@ -41,6 +42,8 @@ export function topicTree(db: Db): {
   path: (id: number | null) => string
   children: (id: number) => TopicRow[]
   subtreeIds: (id: number) => number[]
+  /** Progresso pelo nível mais fundo (veja subtreeProgress), com os pendentes em ordem. */
+  progress: (id: number) => SubtreeProgress<TopicTreeNode>
 } {
   const all = db.select().from(topics).all()
   const byId = new Map(all.map((t) => [t.id, t]))
@@ -61,13 +64,17 @@ export function topicTree(db: Db): {
     id,
     ...children(id).flatMap((c) => subtreeIds(c.id))
   ]
-  return { all, path, children, subtreeIds }
+  const node = (row: TopicRow): TopicTreeNode => ({ ...row, children: children(row.id).map(node) })
+  const progress = (id: number): SubtreeProgress<TopicTreeNode> =>
+    subtreeProgress(node(byId.get(id)!), startOfWeek())
+  return { all, path, children, subtreeIds, progress }
 }
+
+type TopicTreeNode = TopicRow & { children: TopicTreeNode[] }
 
 /** Retrato dos estudos em texto, para a mentora se basear em dados reais. */
 export function studySnapshot(db: Db): string {
   const tree = topicTree(db)
-  const weekStart = startOfWeek()
   const lines: string[] = [
     `Hoje é ${new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.`
   ]
@@ -79,14 +86,18 @@ export function studySnapshot(db: Db): string {
     .toSorted((a, b) => Number(!!b.weeklyGoal) - Number(!!a.weeklyGoal))
   lines.push(
     ...capped(tracked, 40, (topic) => {
-      const kids = tree.children(topic.id)
-      const done = kids.filter((k) => k.completedAt)
-      const thisWeek = done.filter((k) => k.completedAt! >= weekStart).length
-      const pending = kids.filter((k) => !k.completedAt).map((k) => k.name)
+      const p = tree.progress(topic.id)
       return (
-        `- ${tree.path(topic.id)}: ${done.length}/${kids.length} tópicos concluídos` +
-        (topic.weeklyGoal ? ` (meta ${topic.weeklyGoal}/semana; ${thisWeek} nesta semana)` : '') +
-        (pending.length ? `. Pendentes: ${pending.slice(0, 12).join(', ')}` : '')
+        `- ${tree.path(topic.id)}: ${p.done}/${p.total} tópicos concluídos` +
+        (topic.weeklyGoal
+          ? ` (meta ${topic.weeklyGoal}/semana; ${p.doneThisWeek} nesta semana)`
+          : '') +
+        (p.pending.length
+          ? `. Próximos pendentes: ${p.pending
+              .slice(0, 12)
+              .map((t) => t.name)
+              .join(', ')}`
+          : '')
       )
     })
   )

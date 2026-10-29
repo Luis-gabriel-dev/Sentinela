@@ -1,3 +1,4 @@
+import { subtreeProgress, type SubtreeProgress } from '@shared/progress'
 import type { Topic } from '@shared/types'
 import { startOfWeek } from './format'
 
@@ -41,20 +42,8 @@ export function topicPath(topics: Topic[], id: number | null): string {
   return parts.join(' / ')
 }
 
-export interface TopicProgress {
-  done: number
-  total: number
-  percent: number
-  doneThisWeek: number
-}
+export type TopicProgress = SubtreeProgress<TopicNode>
 
-/** Progresso de um assunto = subtópicos diretos concluídos. */
-export function topicProgress(node: TopicNode): TopicProgress {
-  const total = node.children.length
-  const done = node.children.filter((c) => c.completedAt).length
-  const weekStart = startOfWeek()
-  const doneThisWeek = node.children.filter(
-    (c) => c.completedAt && c.completedAt >= weekStart
-  ).length
-  return { done, total, percent: total ? Math.round((done / total) * 100) : 0, doneThisWeek }
-}
+/** Progresso de um assunto pelos tópicos do nível mais fundo (veja subtreeProgress). */
+export const topicProgress = (node: TopicNode): TopicProgress =>
+  subtreeProgress(node, startOfWeek())

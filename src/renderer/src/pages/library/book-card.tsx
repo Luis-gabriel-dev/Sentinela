@@ -1,6 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { AppWindow, FolderOpen, MoreHorizontal, Pencil, TriangleAlert } from 'lucide-react'
+import {
+  AppWindow,
+  FolderOpen,
+  ListTree,
+  MoreHorizontal,
+  Pencil,
+  TriangleAlert
+} from 'lucide-react'
 import { coverUrl } from '@shared/api'
 import type { Book, LibraryFolder } from '@shared/types'
 import { Button } from '@renderer/components/ui/button'
@@ -57,9 +64,11 @@ interface Props {
   book: Book
   folder?: LibraryFolder
   onEdit: () => void
+  /** Criar temas a partir do sumário do livro. */
+  onImportOutline: () => void
 }
 
-export function BookCard({ book, folder, onEdit }: Props): React.JSX.Element {
+export function BookCard({ book, folder, onEdit, onImportOutline }: Props): React.JSX.Element {
   const navigate = useNavigate()
   const percent = Math.round(book.progress * 100)
   const open = (): void => {
@@ -121,6 +130,9 @@ export function BookCard({ book, folder, onEdit }: Props): React.JSX.Element {
               onSelect={() => api.desktop.showInFolder(book.filePath)}
             >
               <FolderOpen /> Mostrar na pasta
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!book.fileExists} onSelect={onImportOutline}>
+              <ListTree /> Criar temas pelo sumário
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={onEdit}>

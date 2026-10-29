@@ -78,6 +78,13 @@
       "when": 1792715136658,
       "tag": "0010_ocr_refined",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1793236348900,
+      "tag": "0011_topic_book",
+      "breakpoints": true
     }
   ]
 }

@@ -11,6 +11,7 @@ import {
   mentorCompactSchema,
   mentorSendSchema,
   suggestScheduleSchema,
+  structureOutlineSchema,
   suggestTopicsSchema,
   type AiProvider,
   type RagKind
@@ -21,6 +22,7 @@ import type {
   ChatMessage,
   Exercise,
   ExerciseSet,
+  OutlineLine,
   RagSource,
   ScheduleSuggestion
 } from '@shared/types'
@@ -190,6 +192,22 @@ const exercisesOutput = z.object({
     })
   )
 })
+
+const outlineOutput = z.object({
+  items: z.array(
+    z.object({
+      level: z.number().int().describe('1 = capítulo/módulo, 2 = item dentro dele, 3 = subitem'),
+      title: z.string()
+    })
+  )
+})
+
+const OUTLINE_PROMPT =
+  'Organize este material de estudo (sumário de livro, lista de aulas de um curso, ementa) em ' +
+  'uma lista de temas, na ordem em que aparecem, com o nível de cada um: 1 = capítulo, módulo ou ' +
+  'parte principal; 2 = item dentro dele; 3 = subitem. Use os títulos como estão, com a ' +
+  'numeração se houver; tire só números de página e durações (como "12min"). Inclua todos os ' +
+  'itens, sem resumir e sem inventar.\n\n'
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
 const toMinutes = (t: string): number => Number(t.slice(0, 2)) * 60 + Number(t.slice(3))
@@ -403,14 +421,16 @@ export function createMentorService(
         if (!chosen.length) throw new Error('Nenhum dos temas foi encontrado')
 
         const topicLines = chosen.map((t) => {
-          const kids = tree.children(t.id)
-          const pending = kids.filter((k) => !k.completedAt).map((k) => k.name)
+          const p = tree.progress(t.id)
           return (
             `- [topic_id ${t.id}] ${tree.path(t.id)}` +
-            (kids.length
-              ? `: ${kids.length - pending.length}/${kids.length} tópicos concluídos`
+            (p.total ? `: ${p.done}/${p.total} tópicos concluídos` : '') +
+            (p.pending.length
+              ? `; próximos pendentes: ${p.pending
+                  .slice(0, 10)
+                  .map((k) => k.name)
+                  .join(', ')}`
               : '') +
-            (pending.length ? `; pendentes: ${pending.slice(0, 10).join(', ')}` : '') +
             (t.weeklyGoal ? `; meta de ${t.weeklyGoal} tópicos/semana` : '')
           )
         })
@@ -479,6 +499,47 @@ export function createMentorService(
           }
           return out.slice(0, 28)
         })
+      },
+
+      async structureOutline(input) {
+        const text = structureOutlineSchema.parse(input)
+        const { ai } = client()
+        // Em partes se não couber de uma vez: a resposta (a lista inteira) também ocupa contexto.
+        const budget = Math.floor(ai.maxInputChars * 0.45)
+        const parts: string[] = []
+        let current = ''
+        for (const line of text.split('\n')) {
+          if (current && current.length + line.length > budget) {
+            parts.push(current)
+            current = ''
+          }
+          current += `${line.slice(0, budget)}\n`
+        }
+        if (current.trim()) parts.push(current)
+
+        const lines: OutlineLine[] = []
+        for (const part of parts) {
+          const items = await untilNotEmpty(async () =>
+            (
+              await ai.generate({
+                system: BASE_SYSTEM,
+                prompt: OUTLINE_PROMPT + part,
+                schema: outlineOutput,
+                name: 'sumario'
+              })
+            ).items
+              .map((item) => ({
+                title: item.title.replace(/\s+/g, ' ').trim().slice(0, 200),
+                level: Math.min(6, Math.max(1, Math.round(item.level)))
+              }))
+              .filter((item) => item.title)
+          )
+          lines.push(...items)
+        }
+        if (!lines.length) throw new Error('A IA não conseguiu organizar este texto')
+        // O primeiro item define o nível de cima.
+        const top = Math.min(...lines.map((l) => l.level))
+        return lines.map((l) => ({ ...l, level: l.level - top + 1 }))
       },
 
       async generateExercises(input) {

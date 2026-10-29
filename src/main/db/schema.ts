@@ -45,6 +45,11 @@ export const topics = sqliteTable(
     trackProgress: integer('track_progress', { mode: 'boolean' }).notNull().default(false),
     weeklyGoal: integer('weekly_goal'),
     completedAt: integer('completed_at', { mode: 'timestamp_ms' }),
+    /** Livro de onde o tema veio (sumário importado) e onde abrir nele ("pagina=12"). */
+    bookId: integer('book_id').references((): AnySQLiteColumn => books.id, {
+      onDelete: 'set null'
+    }),
+    bookLocation: text('book_location'),
     ...timestamps
   },
   (t) => [index('topics_parent_idx').on(t.parentId)]

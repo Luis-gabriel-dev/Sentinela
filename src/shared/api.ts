@@ -6,6 +6,7 @@ import type {
   BookTextInput,
   ExerciseAnswerInput,
   GenerateExercisesInput,
+  ImportOutlineInput,
   MentorCompactInput,
   MentorSendInput,
   RagSettingsUpdate,
@@ -40,6 +41,7 @@ import type {
   Conversation,
   Exercise,
   ModelInfo,
+  OutlineLine,
   RagHit,
   RagStatus,
   ReminderStatus,
@@ -77,6 +79,8 @@ export interface Api {
     create(input: TopicCreate): Promise<Topic>
     update(id: number, input: TopicUpdate): Promise<Topic>
     remove(id: number): Promise<void>
+    /** Cria de uma vez a árvore de um sumário importado. Devolve quantos temas foram criados. */
+    importOutline(input: ImportOutlineInput): Promise<{ rootId: number | null; created: number }>
   }
   tasks: {
     list(filter?: TaskFilter): Promise<Task[]>
@@ -212,6 +216,8 @@ export interface Api {
     /** Propõe blocos semanais de estudo (não salva). */
     suggestSchedule(input: SuggestScheduleInput): Promise<ScheduleSuggestion[]>
     generateExercises(input: GenerateExercisesInput): Promise<ExerciseSet>
+    /** Organiza em capítulos e subitens um texto sem estrutura clara (lista de aulas etc.). */
+    structureOutline(text: string): Promise<OutlineLine[]>
     conversations(): Promise<Conversation[]>
     messages(conversationId: number): Promise<ChatMessage[]>
     /**

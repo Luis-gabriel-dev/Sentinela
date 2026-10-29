@@ -20,8 +20,17 @@ export interface Topic {
   trackProgress: boolean
   weeklyGoal: number | null
   completedAt: Date | null
+  /** Livro de onde o tema veio (sumário importado) e onde abrir nele ("pagina=12"). */
+  bookId: number | null
+  bookLocation: string | null
   createdAt: Date
   updatedAt: Date
+}
+
+/** Item de sumário organizado pela IA: título e nível (1 = capítulo). */
+export interface OutlineLine {
+  title: string
+  level: number
 }
 
 export interface Task {

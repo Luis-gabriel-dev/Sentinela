@@ -21,7 +21,8 @@ const optionalText = (max: number): z.ZodNullable<z.ZodString> =>
 // Temas (árvore: Cybersegurança > Redes > Camada de transporte)
 
 const topicFields = {
-  name: z.string().trim().min(1, 'Informe um nome').max(120),
+  // Títulos de seção de livro podem ser longos ("3.7.2 Notificação explícita de...").
+  name: z.string().trim().min(1, 'Informe um nome').max(200),
   parentId: id.nullable(),
   color: hexColor,
   description: optionalText(2000),
@@ -36,6 +37,43 @@ export const topicCreateSchema = z
 export const topicUpdateSchema = z.object({ ...topicFields, completed: z.boolean() }).partial()
 export type TopicCreate = z.input<typeof topicCreateSchema>
 export type TopicUpdate = z.input<typeof topicUpdateSchema>
+
+/** Um item do sumário importado, com os subitens. */
+export interface OutlineNodeInput {
+  title: string
+  /** Onde abrir no livro, como na URL do leitor: "pagina=12" ou "href=cap03.xhtml#s2". */
+  bookLocation?: string | null
+  children: OutlineNodeInput[]
+}
+
+const outlineNodeSchema: z.ZodType<OutlineNodeInput> = z.lazy(() =>
+  z.object({
+    title: z.string().trim().min(1).max(200),
+    bookLocation: z
+      .string()
+      .regex(/^(pagina|href)=/)
+      .max(1000)
+      .nullable()
+      .optional(),
+    children: z.array(outlineNodeSchema).max(2000)
+  })
+)
+
+export const importOutlineSchema = z.object({
+  /** Onde criar: dentro deste tema, ou como tema principal (null). */
+  parentId: id.nullable(),
+  /** Tema novo que recebe o sumário (ex.: o nome do livro); null = os itens vão direto em parentId. */
+  root: z.object({ name: topicFields.name, color: hexColor }).nullable(),
+  /** Livro da biblioteca de onde veio o sumário (os temas ficam ligados às páginas). */
+  bookId: id.nullable(),
+  /** Acompanhar o progresso pelo sumário. */
+  trackProgress: z.boolean(),
+  items: z.array(outlineNodeSchema).min(1, 'Nada para importar').max(2000)
+})
+export type ImportOutlineInput = z.input<typeof importOutlineSchema>
+
+/** Texto sem estrutura clara (ex.: lista de aulas de um curso) para a IA organizar. */
+export const structureOutlineSchema = z.string().trim().min(10).max(200_000)
 
 // Tarefas
 

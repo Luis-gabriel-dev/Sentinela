@@ -28,9 +28,12 @@ function targetLocation(
   format: Book['format'],
   highlight: BookHighlight | undefined,
   page: number | null,
-  section: number | null
+  section: number | null,
+  href: string | null
 ): string | null {
-  if (format !== 'pdf') return highlight?.location ?? (section ? `section:${section - 1}` : null)
+  if (format !== 'pdf') {
+    return highlight?.location ?? (section ? `section:${section - 1}` : href)
+  }
   if (highlight) {
     const parsed = JSON.parse(highlight.location) as { pages?: { page: number }[] }
     page = parsed.pages?.[0]?.page ?? page
@@ -111,15 +114,16 @@ export function ReaderPage({ standalone = false }: { standalone?: boolean }): Re
       </div>
     )
   }
-  // ?destaque=<id>, ?pagina=<n> ou ?secao=<n> (links das fontes da mentora) abrem ali, não na
-  // posição salva.
+  // ?destaque=<id>, ?pagina=<n>, ?secao=<n> ou ?href=<...> (fontes da mentora, temas importados de um
+  // sumário) abrem ali, não na posição salva.
   const highlightId = Number(params.get('destaque')) || null
   if (!book || (highlightId && highlightsLoading)) return <div className="h-full" />
   const startLocation = targetLocation(
     book.format,
     highlights.find((h) => h.id === highlightId),
     Number(params.get('pagina')) || null,
-    Number(params.get('secao')) || null
+    Number(params.get('secao')) || null,
+    params.get('href')
   )
 
   const Reader = book.format === 'pdf' ? PdfReader : EbookReader

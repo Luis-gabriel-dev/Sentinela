@@ -30,3 +30,6 @@ Thumbs.db
 # Documentos locais (o README é a documentação do repositório)
 guide.md
 projeto.md
+
+# Materiais de estudo de referência (livros, sumários): não vão para o repositório
+material/
