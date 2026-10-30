@@ -176,6 +176,10 @@ function ImportForm({
     try {
       const lines = await api.mentor.structureOutline(result.text)
       show({ ...result, nodes: fromLines(lines), source: 'IA', linked: false })
+      // A prévia é trocada pela versão da IA, mas nada é criado até "Criar temas".
+      toast.success(`A IA organizou ${lines.length} itens`, {
+        description: 'Revise a prévia e clique em “Criar temas” para salvar.'
+      })
     } catch (error) {
       toast.error((error as Error).message)
     } finally {
@@ -431,11 +435,18 @@ function ImportForm({
             variant={empty ? 'default' : 'ghost'}
             disabled={!canStructure || structuring || saving}
             onClick={() => void structure()}
+            title={
+              empty || result.source === 'IA'
+                ? undefined
+                : 'O sumário já foi lido sem IA. Use só se os níveis da prévia estiverem errados.'
+            }
           >
             {structuring ? <Loader2 className="animate-spin" /> : <Sparkles />}
             {structuring
               ? `Organizando com IA${organized ? `: ${organized} itens` : '...'}`
-              : 'Organizar com IA'}
+              : empty
+                ? 'Organizar com IA'
+                : 'Reorganizar com IA'}
           </Button>
         ) : (
           <span />

@@ -147,7 +147,7 @@ function BlockForm({
         />
       </div>
 
-      <div className="grid grid-cols-[1fr_auto] gap-4">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4">
         <div className="grid gap-2">
           <Label>Tema</Label>
           <TopicSelect value={topicId} onChange={setTopicId} />

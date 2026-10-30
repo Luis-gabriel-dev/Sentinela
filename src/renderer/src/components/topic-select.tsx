@@ -8,6 +8,7 @@ import {
 } from '@renderer/components/ui/select'
 import { useTopics } from '@renderer/lib/queries'
 import { buildTopicTree, flattenTree } from '@renderer/lib/topics'
+import { cn } from '@renderer/lib/utils'
 
 const NONE = 'none'
 
@@ -41,16 +42,22 @@ export function TopicSelect({
       value={value === null ? NONE : String(value)}
       onValueChange={(v) => onChange(v === NONE ? null : Number(v))}
     >
-      <SelectTrigger className={className ?? 'w-full'}>
+      {/* Nome longo é cortado com "..." em vez de alargar o campo (e o diálogo em volta). */}
+      <SelectTrigger
+        className={cn(
+          'min-w-0 *:data-[slot=select-value]:w-0 *:data-[slot=select-value]:flex-1',
+          className ?? 'w-full'
+        )}
+      >
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={NONE}>{noneLabel}</SelectItem>
         {options.map((t) => (
           <SelectItem key={t.id} value={String(t.id)}>
-            <span style={{ paddingLeft: t.depth * 12 }} className="flex items-center gap-2">
+            <span style={{ paddingLeft: t.depth * 12 }} className="flex min-w-0 items-center gap-2">
               <span className="size-2.5 shrink-0 rounded-full" style={{ background: t.color }} />
-              {t.name}
+              <span className="truncate">{t.name}</span>
             </span>
           </SelectItem>
         ))}
