@@ -370,6 +370,38 @@ export async function ollamaEmbed(
   })
 }
 
+/**
+ * Lê a resposta em streaming do Ollama (NDJSON: um objeto JSON por linha) e devolve o texto.
+ * Sem streaming, a resposta só chega no fim, e o fetch do Node desiste depois de 5 minutos
+ * esperando: respostas longas de modelos locais passam disso.
+ */
+async function readOllamaStream(
+  response: Response,
+  onDelta: (text: string) => void = () => {}
+): Promise<string> {
+  const reader = response.body!.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let text = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+    for (const line of lines.filter((l) => l.trim())) {
+      const chunk = JSON.parse(line) as { message?: { content?: string }; error?: string }
+      if (chunk.error) throw new AiError(`Ollama: ${chunk.error}`)
+      const delta = chunk.message?.content ?? ''
+      if (delta) {
+        text += delta
+        onDelta(delta)
+      }
+    }
+  }
+  return text
+}
+
 function ollamaClient(baseUrl: string, model: string): AiClient {
   const post = (path: string, body: unknown): Promise<Response> =>
     ollamaFetch(baseUrl, path, body, model)
@@ -380,7 +412,7 @@ function ollamaClient(baseUrl: string, model: string): AiClient {
     async generate({ system, prompt, schema }) {
       const response = await post('/api/chat', {
         model,
-        stream: false,
+        stream: true,
         format: ollamaFormat(schema),
         ...ollamaOptions({ temperature: 0.4 }),
         messages: [
@@ -388,9 +420,9 @@ function ollamaClient(baseUrl: string, model: string): AiClient {
           { role: 'user', content: prompt }
         ]
       })
-      const data = (await response.json()) as { message?: { content?: string } }
+      const content = await readOllamaStream(response)
       try {
-        return schema.parse(JSON.parse(data.message?.content ?? ''))
+        return schema.parse(JSON.parse(content))
       } catch {
         throw new AiError(
           'A resposta do modelo local veio num formato inesperado. Tente outro modelo.'
@@ -406,28 +438,7 @@ function ollamaClient(baseUrl: string, model: string): AiClient {
         ...ollamaOptions({ temperature: 0.6 }),
         messages: [{ role: 'system', content: system }, ...messages]
       })
-      // Resposta em NDJSON: um objeto JSON por linha.
-      const reader = response.body!.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let text = ''
-      for (;;) {
-        const { value, done } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-        for (const line of lines.filter((l) => l.trim())) {
-          const chunk = JSON.parse(line) as { message?: { content?: string }; error?: string }
-          if (chunk.error) throw new AiError(`Ollama: ${chunk.error}`)
-          const delta = chunk.message?.content ?? ''
-          if (delta) {
-            text += delta
-            onDelta(delta)
-          }
-        }
-      }
-      return text
+      return readOllamaStream(response, onDelta)
     },
 
     listModels: () => ollamaModels(baseUrl)

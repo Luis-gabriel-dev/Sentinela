@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gt, inArray } from 'drizzle-orm'
 import { z } from 'zod'
-import { AI_STREAM_CHANNEL, type Api } from '@shared/api'
+import { AI_STREAM_CHANNEL, OUTLINE_PROGRESS_CHANNEL, type Api } from '@shared/api'
 import {
   aiKeySchema,
   aiProviderSchema,
@@ -193,21 +193,46 @@ const exercisesOutput = z.object({
   )
 })
 
-const outlineOutput = z.object({
-  items: z.array(
-    z.object({
-      level: z.number().int().describe('1 = capítulo/módulo, 2 = item dentro dele, 3 = subitem'),
-      title: z.string()
-    })
-  )
-})
-
+// O sumário vem como títulos de Markdown, não JSON: com JSON, o modelo local gasta o dobro de
+// tokens (chaves, aspas, recuo) e um sumário de livro levava uns 4 minutos. Pedir para
+// "transcrever" (e não "organizar") evita que o modelo resuma e fique só com os capítulos.
 const OUTLINE_PROMPT =
-  'Organize este material de estudo (sumário de livro, lista de aulas de um curso, ementa) em ' +
-  'uma lista de temas, na ordem em que aparecem, com o nível de cada um: 1 = capítulo, módulo ou ' +
-  'parte principal; 2 = item dentro dele; 3 = subitem. Use os títulos como estão, com a ' +
-  'numeração se houver; tire só números de página e durações (como "12min"). Inclua todos os ' +
-  'itens, sem resumir e sem inventar.\n\n'
+  'Transcreva este material de estudo (sumário de livro, lista de aulas de um curso, ementa) ' +
+  'para uma lista com níveis. Copie todos os itens do material, um por linha e na mesma ordem, ' +
+  'sem pular nenhum: cada linha que é um título de capítulo, seção, subseção, módulo ou aula ' +
+  'vira uma linha da lista. Marque o nível com # como nos títulos de Markdown: "#" para ' +
+  'capítulo, módulo ou parte principal; "##" para seção ou item dentro dele; "###" para ' +
+  'subseção ou subitem (e "####" se houver mais um nível). Mantenha os títulos e a numeração ' +
+  'como estão; tire só números de página, durações (como "12min") e marcações como ** e -. ' +
+  'Ignore textos que não são itens (apresentação, observações). Escreva só a lista.'
+
+// Trechos menores rendem progresso visível, e modelos pequenos param no meio de listas longas.
+const OUTLINE_PART_CHARS = 6000
+
+/**
+ * Lê a resposta linha a linha: títulos (#) e, se o modelo misturar, itens de lista (-) logo
+ * abaixo do último título, pelo recuo.
+ */
+function outlineReader(): (line: string) => OutlineLine | null {
+  let headingLevel = 0
+  return (line) => {
+    const heading = line.match(/^\s*(#{1,6})\s+(.+?)[\s#]*$/)
+    const bullet = heading ? null : line.match(/^(\s*)[-*+•]\s+(.+)$/)
+    const title = (heading?.[2] ?? bullet?.[2])
+      ?.replace(/\*\*|__/g, '')
+      .replace(/^[#\-*+•\s]+/, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 200)
+    if (!title) return null
+    if (heading) {
+      headingLevel = heading[1].length
+      return { level: headingLevel, title }
+    }
+    const indent = Math.floor(bullet![1].replace(/\t/g, '  ').length / 2)
+    return { level: Math.min(6, headingLevel + 1 + indent), title }
+  }
+}
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
 const toMinutes = (t: string): number => Number(t.slice(0, 2)) * 60 + Number(t.slice(3))
@@ -504,42 +529,89 @@ export function createMentorService(
       async structureOutline(input) {
         const text = structureOutlineSchema.parse(input)
         const { ai } = client()
-        // Em partes se não couber de uma vez: a resposta (a lista inteira) também ocupa contexto.
-        const budget = Math.floor(ai.maxInputChars * 0.45)
-        const parts: string[] = []
-        let current = ''
-        for (const line of text.split('\n')) {
-          if (current && current.length + line.length > budget) {
+        // Em partes: a resposta (a lista inteira) também ocupa contexto.
+        const budget = Math.min(OUTLINE_PART_CHARS, Math.floor(ai.maxInputChars * 0.45))
+        const parts: string[][] = []
+        let current: string[] = []
+        let size = 0
+        // Sem as marcações de Markdown do material (#, -, **): o modelo as copia para dentro dos
+        // títulos. O recuo fica, porque ele mostra o que está dentro do quê.
+        const plain = text
+          .split('\n')
+          .map((l) => l.replace(/^(\s*)(#{1,6}\s+|>\s*|[-*+•]\s+)/, '$1').replace(/\*\*|__/g, ''))
+        for (const line of plain.map((l) => l.slice(0, budget))) {
+          if (current.length && size + line.length > budget) {
             parts.push(current)
-            current = ''
+            current = []
+            size = 0
           }
-          current += `${line.slice(0, budget)}\n`
+          current.push(line)
+          size += line.length + 1
         }
-        if (current.trim()) parts.push(current)
+        if (current.some((l) => l.trim())) parts.push(current)
 
+        const key = (title: string): string => title.toLowerCase().replace(/\s+/g, ' ')
         const lines: OutlineLine[] = []
         for (const part of parts) {
-          const items = await untilNotEmpty(async () =>
-            (
-              await ai.generate({
-                system: BASE_SYSTEM,
-                prompt: OUTLINE_PROMPT + part,
-                schema: outlineOutput,
-                name: 'sumario'
-              })
-            ).items
-              .map((item) => ({
-                title: item.title.replace(/\s+/g, ' ').trim().slice(0, 200),
-                level: Math.min(6, Math.max(1, Math.round(item.level)))
-              }))
-              .filter((item) => item.title)
+          // Cada pedido escolhe os próprios níveis (os capítulos podem vir com # numa parte e ##
+          // na outra). Por isso cada parte começa com a linhagem do último item já transcrito
+          // (capítulo, seção, subseção): ela dá o contexto, e o nível em que a IA a repete mostra
+          // o deslocamento. A repetição é descartada.
+          const overlap: OutlineLine[] = []
+          for (const line of lines.toReversed()) {
+            if (!overlap.length || line.level < overlap[0].level) overlap.unshift(line)
+          }
+          const material = [...overlap.map((l) => l.title), ...part].join('\n')
+          const prompt = `${OUTLINE_PROMPT}\n\n<material>\n${material}\n</material>`
+          const items = await untilNotEmpty(async () => {
+            const found: OutlineLine[] = []
+            const read = outlineReader()
+            let pending = ''
+            const take = (line: string): void => {
+              const item = read(line)
+              if (!item) return
+              found.push(item)
+              broadcast(
+                OUTLINE_PROGRESS_CHANNEL,
+                lines.length + Math.max(0, found.length - overlap.length)
+              )
+            }
+            await ai.chat({
+              system: BASE_SYSTEM,
+              messages: [{ role: 'user', content: prompt }],
+              onDelta: (delta) => {
+                const split = (pending + delta).split('\n')
+                pending = split.pop() ?? ''
+                split.forEach(take)
+              }
+            })
+            take(pending)
+            return found
+          })
+          const known = new Map(overlap.map((l) => [key(l.title), l.level]))
+          let shift: number | null = null
+          let skip = 0
+          items.slice(0, overlap.length * 2).forEach((item, j) => {
+            const level = known.get(key(item.title))
+            if (level === undefined) return
+            // O item mais alto da linhagem (o capítulo) é a âncora mais firme.
+            shift ??= level - item.level
+            skip = j + 1
+          })
+          const offset = shift ?? 0
+          lines.push(
+            ...items
+              .slice(skip)
+              .map((l) => ({ ...l, level: Math.min(6, Math.max(1, l.level + offset)) }))
           )
-          lines.push(...items)
         }
         if (!lines.length) throw new Error('A IA não conseguiu organizar este texto')
-        // O primeiro item define o nível de cima.
         const top = Math.min(...lines.map((l) => l.level))
-        return lines.map((l) => ({ ...l, level: l.level - top + 1 }))
+        // Um único item no nível de cima, logo no começo, é o nome do material, não um capítulo.
+        const named = lines.length > 2 && lines.filter((l) => l.level === top).length === 1
+        const body = named && lines[0].level === top ? lines.slice(1) : lines
+        const bodyTop = Math.min(...body.map((l) => l.level))
+        return body.map((l) => ({ ...l, level: l.level - bodyTop + 1 }))
       },
 
       async generateExercises(input) {

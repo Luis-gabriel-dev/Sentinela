@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, FileUp, Loader2, Plus, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
+import { OUTLINE_PROGRESS_CHANNEL } from '@shared/api'
 import type { OutlineNodeInput } from '@shared/schemas'
 import type { Book } from '@shared/types'
 import { Button } from '@renderer/components/ui/button'
@@ -103,6 +104,7 @@ function ImportForm({
   const fileInput = useRef<HTMLInputElement>(null)
   const [reading, setReading] = useState(false)
   const [structuring, setStructuring] = useState(false)
+  const [organized, setOrganized] = useState(0)
   const [saving, setSaving] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [pasted, setPasted] = useState('')
@@ -161,8 +163,15 @@ function ImportForm({
     }
   }, [book])
 
+  // Quantos itens a IA já organizou (com o modelo local, um sumário de livro leva minutos).
+  useEffect(() => {
+    if (!structuring) return
+    return window.sentinela.on(OUTLINE_PROGRESS_CHANNEL, (count) => setOrganized(Number(count)))
+  }, [structuring])
+
   const structure = async (): Promise<void> => {
     if (!result?.text) return
+    setOrganized(0)
     setStructuring(true)
     try {
       const lines = await api.mentor.structureOutline(result.text)
@@ -424,7 +433,9 @@ function ImportForm({
             onClick={() => void structure()}
           >
             {structuring ? <Loader2 className="animate-spin" /> : <Sparkles />}
-            {structuring ? 'Organizando com IA...' : 'Organizar com IA'}
+            {structuring
+              ? `Organizando com IA${organized ? `: ${organized} itens` : '...'}`
+              : 'Organizar com IA'}
           </Button>
         ) : (
           <span />

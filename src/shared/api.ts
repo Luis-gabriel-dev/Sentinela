@@ -216,7 +216,10 @@ export interface Api {
     /** Propõe blocos semanais de estudo (não salva). */
     suggestSchedule(input: SuggestScheduleInput): Promise<ScheduleSuggestion[]>
     generateExercises(input: GenerateExercisesInput): Promise<ExerciseSet>
-    /** Organiza em capítulos e subitens um texto sem estrutura clara (lista de aulas etc.). */
+    /**
+     * Organiza em capítulos e subitens um texto sem estrutura clara (lista de aulas etc.). O
+     * andamento chega pelo canal OUTLINE_PROGRESS_CHANNEL.
+     */
     structureOutline(text: string): Promise<OutlineLine[]>
     conversations(): Promise<Conversation[]>
     messages(conversationId: number): Promise<ChatMessage[]>
@@ -251,7 +254,13 @@ export const IPC_CHANNEL = 'sentinela:api'
 export const AI_STREAM_CHANNEL = 'sentinela:ai-stream'
 /** Pede à interface para ir a uma rota (ex.: clique numa notificação). Payload: a rota. */
 export const NAVIGATE_CHANNEL = 'sentinela:navigate'
-export const EVENT_CHANNELS = [AI_STREAM_CHANNEL, NAVIGATE_CHANNEL] as const
+/** Andamento de mentor.structureOutline. Payload: quantos itens a IA já organizou (número). */
+export const OUTLINE_PROGRESS_CHANNEL = 'sentinela:outline-progress'
+export const EVENT_CHANNELS = [
+  AI_STREAM_CHANNEL,
+  NAVIGATE_CHANNEL,
+  OUTLINE_PROGRESS_CHANNEL
+] as const
 
 /** Protocolo próprio para servir arquivos locais (anexos, capas, livros) à interface. */
 export const FILE_PROTOCOL = 'sentinela'
