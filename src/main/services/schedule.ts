@@ -25,6 +25,7 @@ export function createScheduleService(db: Db): Api['schedule'] {
     async create(input) {
       const data = scheduleBlockSchema.parse({
         topicId: null,
+        projectId: null,
         color: null,
         weekday: null,
         date: null,

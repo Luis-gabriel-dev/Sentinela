@@ -74,6 +74,9 @@ export const scheduleBlocks = sqliteTable('schedule_blocks', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   title: text('title').notNull(),
   topicId: integer('topic_id').references(() => topics.id, { onDelete: 'set null' }),
+  projectId: integer('project_id').references((): AnySQLiteColumn => projects.id, {
+    onDelete: 'set null'
+  }),
   color: text('color'),
   recurrence: text('recurrence', { enum: RECURRENCES }).notNull(),
   weekday: integer('weekday'),
@@ -269,6 +272,8 @@ export const aiMessages = sqliteTable(
     content: text('content').notNull(),
     /** JSON com os trechos (RagSource[]) que a busca inteligente entregou para esta resposta. */
     sources: text('sources'),
+    /** JSON com a proposta da mentora (MessageProposal): temas e blocos para confirmar. */
+    proposal: text('proposal'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
       .$defaultFn(() => new Date())

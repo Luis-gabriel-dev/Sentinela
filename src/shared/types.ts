@@ -6,6 +6,7 @@ import type {
   ExerciseResult,
   HighlightColor,
   Priority,
+  Proposal,
   RagKind,
   Recurrence
 } from './schemas'
@@ -49,6 +50,8 @@ export interface ScheduleBlock {
   id: number
   title: string
   topicId: number | null
+  /** Projeto do GitHub trabalhado no bloco. */
+  projectId: number | null
   color: string | null
   recurrence: Recurrence
   /** 0 = domingo ... 6 = sábado (só quando recurrence = 'weekly') */
@@ -304,7 +307,27 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   sources: RagSource[] | null
+  proposal: MessageProposal | null
   createdAt: Date
+}
+
+/** Quantos temas e blocos uma proposta criou. */
+export interface ProposalResult {
+  topics: number
+  blocks: number
+}
+
+/** Proposta da mentora numa resposta da conversa, com o que o estudante fez com ela. */
+export interface MessageProposal extends Proposal {
+  status: 'pending' | 'applied' | 'discarded'
+  result: ProposalResult | null
+}
+
+/** Plano da semana montado pela IA (para revisar) e observações sobre ele. */
+export interface WeekPlan {
+  proposal: Proposal
+  /** Horários livres que ficaram sem bloco, temas sem pendências etc. */
+  notes: string[]
 }
 
 /** Quanto do contexto do modelo a conversa já ocupa (aproximado, em caracteres). */

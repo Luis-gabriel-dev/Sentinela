@@ -7,6 +7,7 @@ import { registerApi } from './ipc'
 import { createTopicsService } from './services/topics'
 import { createTasksService } from './services/tasks'
 import { createScheduleService } from './services/schedule'
+import { createWeekService } from './services/week'
 import { createNotesService } from './services/notes'
 import { createAttachmentsService } from './services/attachments'
 import { createFoldersService } from './services/folders'
@@ -172,6 +173,7 @@ if (!app.requestSingleInstanceLock()) {
         topics: createTopicsService(db),
         tasks: createTasksService(db),
         schedule: createScheduleService(db),
+        week: createWeekService(db),
         notes: createNotesService(db),
         attachments: createAttachmentsService(attachmentsDir),
         folders: createFoldersService(db),
@@ -197,7 +199,9 @@ if (!app.requestSingleInstanceLock()) {
         if (
           /^(notes|highlights|ocr|books|topics)\.(create|update|remove|recognizePage|refinePage|clear|saveText)$/.test(
             path
-          )
+          ) ||
+          path === 'mentor.applyProposal' ||
+          path === 'week.applyPlan'
         ) {
           rag.index.scheduleSync()
         }

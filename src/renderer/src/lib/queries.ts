@@ -8,7 +8,7 @@ import {
 } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import type { Api } from '@shared/api'
-import type { AiProvider, DateRange, TaskFilter } from '@shared/schemas'
+import type { AiProvider, DateRange, TaskFilter, WeekAvailability } from '@shared/schemas'
 import type {
   AiSettings,
   AppInfo,
@@ -44,6 +44,7 @@ export const keys = {
   tasks: (filter?: TaskFilter): QueryKey => ['tasks', filter ?? {}],
   schedule: ['schedule'],
   checkins: (range: DateRange): QueryKey => ['checkins', range],
+  week: ['week'],
   appInfo: ['app-info'],
   notes: ['notes'],
   note: (id: number): QueryKey => ['note', id],
@@ -84,6 +85,9 @@ export const useCheckins = (range: DateRange | null): UseQueryResult<BlockChecki
     queryFn: () => api.schedule.checkins(range!),
     enabled: range !== null
   })
+
+export const useWeekAvailability = (): UseQueryResult<WeekAvailability> =>
+  useQuery({ queryKey: keys.week, queryFn: () => api.week.availability() })
 
 export const useAppInfo = (): UseQueryResult<AppInfo> =>
   useQuery({ queryKey: keys.appInfo, queryFn: () => api.app.info() })
@@ -262,6 +266,17 @@ export const useCreateBlock = mutationFor('schedule', 'create', [keys.schedule])
 export const useUpdateBlock = mutationFor('schedule', 'update', [keys.schedule])
 export const useRemoveBlock = mutationFor('schedule', 'remove', [keys.schedule, ['checkins']])
 export const useToggleCheckin = mutationFor('schedule', 'toggleCheckin', [['checkins']])
+
+export const useSaveAvailability = mutationFor('week', 'saveAvailability', [keys.week])
+// O plano cria temas e blocos.
+export const useApplyPlan = mutationFor('week', 'applyPlan', [keys.topics, keys.schedule])
+export const usePlanWeek = mutationFor('mentor', 'planWeek', [])
+export const useApplyProposal = mutationFor('mentor', 'applyProposal', [
+  ['mentor'],
+  keys.topics,
+  keys.schedule
+])
+export const useDiscardProposal = mutationFor('mentor', 'discardProposal', [['mentor']])
 
 export const useCreateNote = mutationFor('notes', 'create', [keys.notes])
 export const useUpdateNote = mutationFor('notes', 'update', [keys.notes])

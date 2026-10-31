@@ -22,7 +22,11 @@ import type {
   NoteCreate,
   NoteUpdate,
   OcrPageInput,
+  PlanWeekInput,
   ProjectUpdate,
+  Proposal,
+  ProposalSkip,
+  WeekAvailability,
   ScheduleBlockCreate,
   ScheduleBlockUpdate,
   TaskCreate,
@@ -42,6 +46,8 @@ import type {
   Exercise,
   ModelInfo,
   OutlineLine,
+  ProposalResult,
+  WeekPlan,
   RagHit,
   RagStatus,
   ReminderStatus,
@@ -96,6 +102,13 @@ export interface Api {
     checkins(range: DateRange): Promise<BlockCheckin[]>
     /** Marca/desmarca o bloco como concluído no dia. Retorna o novo estado. */
     toggleCheckin(blockId: number, date: string): Promise<boolean>
+  }
+  week: {
+    /** Horários livres do estudante na semana (para estudos e para projetos). */
+    availability(): Promise<WeekAvailability>
+    saveAvailability(input: WeekAvailability): Promise<WeekAvailability>
+    /** Cria o que o estudante deixou marcado no plano da semana (mentor.planWeek). */
+    applyPlan(proposal: Proposal, skip: ProposalSkip): Promise<ProposalResult>
   }
   notes: {
     list(): Promise<NoteSummary[]>
@@ -228,6 +241,14 @@ export interface Api {
      * e a mensagem final é devolvida aqui.
      */
     send(input: MentorSendInput): Promise<{ conversation: Conversation; message: ChatMessage }>
+    /** Cria o que o estudante deixou marcado na proposta de uma resposta da mentora. */
+    applyProposal(messageId: number, skip: ProposalSkip): Promise<ChatMessage>
+    discardProposal(messageId: number): Promise<ChatMessage>
+    /**
+     * Monta a semana nos horários livres: blocos para os temas e projetos escolhidos e, se pedido,
+     * subtópicos para os temas que ainda não têm (não salva: a interface mostra para revisão).
+     */
+    planWeek(input: PlanWeekInput): Promise<WeekPlan>
     /** Resume a conversa até aqui; daí em diante a IA recebe o resumo no lugar das mensagens. */
     compact(input: MentorCompactInput): Promise<Conversation>
     contextUsage(conversationId: number): Promise<ContextUsage>

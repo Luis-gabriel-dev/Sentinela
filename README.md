@@ -152,8 +152,11 @@ pelo sumário"), um sumário vira uma árvore de temas de uma vez:
   planilha; junta títulos quebrados em duas linhas e tira pontilhados, números de página e
   durações de aula. Não usa IA: o sumário inteiro do Kurose (221 itens) sai em milissegundos.
 - **Sem estrutura reconhecível** (lista de aulas copiada de um site, por exemplo): "Organizar
-  com IA" (`mentor.structureOutline`) pede ao modelo a lista com o nível de cada item, em partes
-  se o texto for longo.
+  com IA" (`mentor.structureOutline`) pede ao modelo que transcreva os itens como títulos de
+  Markdown (`#`, `##`, `###`: metade dos tokens do JSON), em partes de ~6 mil caracteres. Cada
+  parte começa com a linhagem do último item já transcrito, e o nível em que o modelo a repete
+  corrige o deslocamento entre partes. O andamento chega pelo canal
+  `sentinela:outline-progress`.
 - A **prévia** em árvore deixa desmarcar itens ("Resumo", "Referências", "Índice"... já vêm
   desmarcados), escolher até que nível importar, manter ou não a numeração e corrigir o
   agrupamento com as setas de nível (o item leva os subitens junto). `topics.importOutline` cria
@@ -166,6 +169,28 @@ da mentora): a barra de um tema acompanhado conta os tópicos sem subtópicos de
 (num livro, as subseções). Qualquer item dentro de um tema acompanhado pode ser marcado; marcar
 um capítulo conta todos os tópicos dele, na data em que foi marcado (vale para a meta semanal).
 Do terceiro nível para baixo a árvore começa recolhida.
+
+### Semana (horários livres e plano com IA)
+
+A página Semana (`src/renderer/src/pages/week/`) mostra a rotina semanal:
+
+- **Horários livres**: por dia, faixas de estudos ou de projetos (`week.availability` /
+  `week.saveAvailability`, guardados em `settings` com a chave `week.availability`). Faixas do
+  mesmo dia não podem se sobrepor.
+- **Horas por semana** por área (o tema de cima da árvore, ou "Projetos" para blocos com
+  `schedule_blocks.project_id`) e o tempo livre que ficou sem bloco.
+- **Dia a dia**: os blocos (semanais e avulsos daquela data) com o "feito" do dia (os mesmos
+  check-ins de Hoje e da Agenda) e, nos blocos de tema, o **próximo assunto pendente** para marcar
+  como estudado ali mesmo. Os blocos se repetem toda semana e o conteúdo avança sozinho: marcou,
+  aparece o seguinte. Dois blocos do mesmo tema no dia mostram assuntos diferentes. As sobras dos
+  horários livres aparecem como "Livre".
+- **Planejar com IA** (`mentor.planWeek`): escolhidos os temas e os projetos, a IA divide em
+  subtópicos os temas que ainda não têm (`suggestTopics`) e distribui os blocos nos horários do
+  tipo certo. O código confere cada bloco (dentro de um horário livre, sem sobrepor a agenda,
+  até 2h30) e completa o que a IA deixou vazio revezando os temas, quem tem mais pendências
+  primeiro, e os projetos (`fillWindows` em `src/main/services/week.ts`). Opcionalmente substitui
+  os blocos semanais que já estavam nesses horários. Nada é gravado antes da revisão; o que fica
+  marcado vai para `week.applyPlan`.
 
 ### Backup
 
@@ -268,6 +293,21 @@ Do terceiro nível para baixo a árvore começa recolhida.
   blocos fora do horário ou em conflito com a agenda, alternativas e índices inválidos.
 - Sugestões de tópicos e de agenda **não são gravadas** sozinhas: a interface mostra e o
   estudante escolhe o que entra.
+- **Ações na conversa** (`src/main/ai/mentor-tools.ts`): a mentora tem as ferramentas
+  `propor_temas` (temas e subtópicos, dentro de um tema existente pelo id que aparece no retrato)
+  e `propor_blocos` (blocos semanais). `chat` aceita `tools` nos três provedores (Claude
+  `tool_use`, OpenAI `function_call`, Ollama `tool_calls`; modelo do Ollama sem suporte a
+  ferramentas segue sem elas). As chamadas viram uma proposta (`ai_messages.proposal`) conferida
+  em código: dias e horários normalizados ("sexta-feira", "9h30"), blocos que batem com a agenda
+  descartados (a resposta diz quantos e por quê), tema do bloco ligado pelo id, por um tema
+  proposto na mesma resposta ou pelo nome. A interface mostra um cartão para desmarcar itens e
+  confirmar (`mentor.applyProposal`) ou descartar; blocos fora dos horários livres vêm
+  sinalizados. Ao criar, um tema que já existe no mesmo lugar é reaproveitado (os subtópicos
+  entram nele), então dois cartões parecidos não duplicam temas. O retrato da mentora traz os ids
+  dos temas, os horários livres e os ainda vagos, e o histórico enviado à IA diz o que aconteceu
+  com cada proposta (aguardando, criada, descartada).
+- **Ollama em streaming**: também nas respostas estruturadas. Sem streaming, a resposta só chega
+  no fim, e o `fetch` do Node desiste depois de 5 minutos esperando.
 - A resposta da conversa chega aos pedaços pelo canal `sentinela:ai-stream` (main → interface);
   o preload só deixa escutar os canais listados em `EVENT_CHANNELS`.
 

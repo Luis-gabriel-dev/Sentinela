@@ -15,7 +15,8 @@ import {
   SettingsIcon,
   TasksIcon,
   TodayIcon,
-  TopicsIcon
+  TopicsIcon,
+  WeekIcon
 } from '@renderer/components/icons'
 import { readPendingBooks } from '@renderer/lib/book-text'
 import { keys, useBooks, useRagStatus } from '@renderer/lib/queries'
@@ -32,6 +33,7 @@ interface NavItem {
 const NAV: NavItem[][] = [
   [
     { to: '/', label: 'Hoje', icon: TodayIcon },
+    { to: '/semana', label: 'Semana', icon: WeekIcon },
     { to: '/agenda', label: 'Agenda', icon: AgendaIcon },
     { to: '/tarefas', label: 'Tarefas', icon: TasksIcon },
     { to: '/temas', label: 'Temas e progresso', icon: TopicsIcon }

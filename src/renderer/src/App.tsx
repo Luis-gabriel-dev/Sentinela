@@ -3,6 +3,7 @@ import { AppShell } from './components/app-shell'
 import { ErrorBoundary } from './components/error-boundary'
 import { TodayPage } from './pages/today'
 import { AgendaPage } from './pages/agenda'
+import { WeekPage } from './pages/week'
 import { TasksPage } from './pages/tasks'
 import { TopicsPage } from './pages/topics'
 import { SettingsPage } from './pages/settings'
@@ -17,6 +18,7 @@ function App(): React.JSX.Element {
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<TodayPage />} />
+        <Route path="semana" element={<WeekPage />} />
         <Route path="agenda" element={<AgendaPage />} />
         <Route path="tarefas" element={<TasksPage />} />
         <Route path="temas" element={<TopicsPage />} />

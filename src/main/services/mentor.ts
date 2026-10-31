@@ -10,10 +10,15 @@ import {
   generateExercisesSchema,
   mentorCompactSchema,
   mentorSendSchema,
+  planWeekSchema,
+  proposalSkipSchema,
   suggestScheduleSchema,
   structureOutlineSchema,
   suggestTopicsSchema,
   type AiProvider,
+  type PlanWeekInput,
+  type Proposal,
+  type ProposedBlock,
   type RagKind
 } from '@shared/schemas'
 import type {
@@ -22,13 +27,25 @@ import type {
   ChatMessage,
   Exercise,
   ExerciseSet,
+  MessageProposal,
   OutlineLine,
   RagSource,
-  ScheduleSuggestion
+  ScheduleSuggestion,
+  TopicSuggestion,
+  WeekPlan
 } from '@shared/types'
 import { AI_CONFIG_KEY, getSetting, readAiConfig, setSetting, type AiConfig } from '../ai/config'
+import {
+  MENTOR_TOOLS,
+  MENTOR_TOOLS_PROMPT,
+  proposalFromToolCalls,
+  proposalNote,
+  type ToolCall
+} from '../ai/mentor-tools'
 import { createAiClient, type AiClient } from '../ai/providers'
 import { studySnapshot, topicMaterial, topicTree } from '../ai/context'
+import { applyProposal, overlaps, parseTime, parseWeekday, toMinutes } from './proposals'
+import { fillWindows, readWeekAvailability } from './week'
 import type { RagIndex, RagMatch } from '../ai/rag'
 import type { Db } from '../db/client'
 import {
@@ -37,6 +54,7 @@ import {
   exerciseSets,
   exercises,
   notes,
+  projects,
   scheduleBlocks,
   settings
 } from '../db/schema'
@@ -53,7 +71,7 @@ const MENTOR_SYSTEM = `${BASE_SYSTEM}
 
 Seu papel é acompanhar o estudante: dizer se ele está no rumo certo e sugerir próximos passos concretos com base nos dados dele (progresso nos temas, agenda, tarefas, resultados de exercícios e projetos). Seja honesta: se os dados mostram atraso ou pouca prática, diga isso com gentileza e proponha um ajuste realista. Não invente dados que não aparecem no retrato abaixo; se faltar informação para responder bem, pergunte. Prefira respostas curtas e acionáveis.
 
-Quando sugerir algo que o próprio Sentinela faz, diga onde: dividir um tema em tópicos (Temas e progresso), montar a semana (Agenda), gerar exercícios com gabarito (IA mentora > Exercícios).`
+Quando sugerir algo que o próprio Sentinela faz, diga onde: dividir um tema em tópicos (Temas e progresso), montar a semana nos horários livres (Semana > Planejar com IA), gerar exercícios com gabarito (IA mentora > Exercícios).`
 
 const SUMMARY_SYSTEM = `${BASE_SYSTEM}
 
@@ -63,7 +81,8 @@ type MessageRow = typeof aiMessages.$inferSelect
 
 const toMessage = (row: MessageRow): ChatMessage => ({
   ...row,
-  sources: row.sources ? (JSON.parse(row.sources) as RagSource[]) : null
+  sources: row.sources ? (JSON.parse(row.sources) as RagSource[]) : null,
+  proposal: row.proposal ? (JSON.parse(row.proposal) as MessageProposal) : null
 })
 
 const SOURCE_LABEL: Record<RagSource['kind'], (s: Pick<RagSource, 'title' | 'page'>) => string> = {
@@ -82,6 +101,7 @@ function mentorSystem(
 ): string {
   return [
     MENTOR_SYSTEM,
+    MENTOR_TOOLS_PROMPT,
     `# Retrato atual dos estudos\n\n${snapshot}`,
     summary &&
       '# Resumo da conversa até aqui\n\nAs mensagens mais antigas desta conversa foram ' +
@@ -179,6 +199,19 @@ const scheduleOutput = z.object({
   )
 })
 
+const planOutput = z.object({
+  blocks: z.array(
+    z.object({
+      weekday: z.enum(WEEKDAYS).describe('Dia da semana do bloco'),
+      start_time: z.string().describe('Início, HH:MM 24h'),
+      end_time: z.string().describe('Fim, HH:MM 24h'),
+      kind: z.enum(['tema', 'projeto']),
+      id: z.number().int().describe('id do tema ou do projeto'),
+      title: z.string().describe('O que fazer no bloco, curto')
+    })
+  )
+})
+
 const exercisesOutput = z.object({
   title: z.string().describe('Título curto da lista'),
   exercises: z.array(
@@ -235,7 +268,6 @@ function outlineReader(): (line: string) => OutlineLine | null {
 }
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
-const toMinutes = (t: string): number => Number(t.slice(0, 2)) * 60 + Number(t.slice(3))
 
 // Modelos pequenos (Ollama) às vezes devolvem uma lista vazia. Pede de novo antes de desistir.
 async function untilNotEmpty<T>(attempt: () => Promise<T[]>, tries = 3): Promise<T[]> {
@@ -321,6 +353,22 @@ export function createMentorService(
       .returning()
       .get()!
 
+  const proposalRow = (messageId: number): { row: MessageRow; proposal: MessageProposal } => {
+    const row = db.select().from(aiMessages).where(eq(aiMessages.id, messageId)).get()
+    if (!row?.proposal) throw new Error('Proposta não encontrada')
+    return { row, proposal: JSON.parse(row.proposal) as MessageProposal }
+  }
+
+  const saveProposal = (messageId: number, proposal: MessageProposal): ChatMessage =>
+    toMessage(
+      db
+        .update(aiMessages)
+        .set({ proposal: JSON.stringify(proposal) })
+        .where(eq(aiMessages.id, messageId))
+        .returning()
+        .get()!
+    )
+
   const exerciseSetView = (setId: number): ExerciseSet => {
     const set = db.select().from(exerciseSets).where(eq(exerciseSets.id, setId)).get()
     if (!set) throw new Error('Lista de exercícios não encontrada')
@@ -337,6 +385,247 @@ export function createMentorService(
       answered: items.filter((e) => e.result).length,
       correct: items.filter((e) => e.result === 'correct').length,
       exercises: items
+    }
+  }
+
+  /** Subtópicos sugeridos para um tema (não salva). */
+  const suggestTopicsFor = async (
+    topicId: number,
+    instructions: string | null
+  ): Promise<TopicSuggestion[]> => {
+    const tree = topicTree(db)
+    const topic = tree.all.find((t) => t.id === topicId)
+    if (!topic) throw new Error('Tema não encontrado')
+    const existing = tree.children(topicId).map((t) => t.name)
+    const noteTitles = db
+      .select({ title: notes.title })
+      .from(notes)
+      .where(inArray(notes.topicId, tree.subtreeIds(topicId)))
+      .all()
+      .map((n) => n.title)
+      .filter(Boolean)
+
+    const prompt = [
+      `Tema: ${tree.path(topicId)}`,
+      topic.description ? `Descrição: ${topic.description}` : '',
+      existing.length ? `Subtópicos que já existem (não repita): ${existing.join('; ')}` : '',
+      noteTitles.length ? `Anotações já feitas nesse tema: ${noteTitles.join('; ')}` : '',
+      instructions ? `Pedido do estudante: ${instructions}` : '',
+      '',
+      'Divida esse tema em tópicos de estudo, na ordem em que faz sentido estudar. Cada tópico ' +
+        'deve caber em uma ou duas sessões de 1 a 3 horas. Entre 4 e 12 tópicos, com nomes ' +
+        'curtos (até 60 caracteres) e uma descrição de uma frase do que estudar.'
+    ]
+      .filter(Boolean)
+      .join('\n')
+
+    const { ai } = client()
+    return untilNotEmpty(async () => {
+      const result = await ai.generate({
+        system: BASE_SYSTEM,
+        prompt,
+        schema: topicsOutput,
+        name: 'topicos'
+      })
+      const seen = new Set(existing.map((n) => n.toLowerCase()))
+      return result.topics
+        .map((t) => ({ name: t.name.trim().slice(0, 120), description: t.description.trim() }))
+        .filter((t) => t.name && !seen.has(t.name.toLowerCase()) && seen.add(t.name.toLowerCase()))
+        .slice(0, 15)
+    })
+  }
+
+  /**
+   * Semana nos horários livres: os temas vão nos horários de estudos e os projetos nos de
+   * projetos. A IA escolhe o que vai onde; o código confere se cada bloco cabe num horário livre
+   * do tipo certo e não bate com outro.
+   */
+  const planWeek = async (input: PlanWeekInput): Promise<WeekPlan> => {
+    const { topicIds, projectIds, splitTopics, replace } = planWeekSchema.parse(input)
+    const { windows } = readWeekAvailability(db)
+    if (!windows.length) throw new Error('Informe seus horários livres primeiro')
+    const tree = topicTree(db)
+    const themes = tree.all.filter((t) => topicIds.includes(t.id))
+    const repos = db
+      .select()
+      .from(projects)
+      .all()
+      .filter((p) => projectIds.includes(p.id))
+    const notesOut: string[] = []
+    if (themes.length && !windows.some((w) => w.kind === 'estudos')) {
+      notesOut.push('Você não tem horário livre para estudos: os temas ficaram sem bloco.')
+    }
+    if (repos.length && !windows.some((w) => w.kind === 'projetos')) {
+      notesOut.push('Você não tem horário livre para projetos: os projetos ficaram sem bloco.')
+    }
+
+    // Temas sem nenhum subtópico ganham uma divisão (para o bloco mostrar o assunto da vez).
+    const topicGroups: Proposal['topics'] = []
+    if (splitTopics) {
+      for (const theme of themes.filter((t) => !tree.children(t.id).length)) {
+        const suggestions = await suggestTopicsFor(theme.id, null).catch(() => [])
+        if (suggestions.length) {
+          topicGroups.push({
+            parentId: theme.id,
+            items: suggestions.map((s) => ({ name: s.name, children: [] }))
+          })
+        }
+      }
+    }
+
+    const weekly = db
+      .select()
+      .from(scheduleBlocks)
+      .all()
+      .flatMap((b) =>
+        b.recurrence === 'weekly' && b.weekday !== null ? [{ ...b, weekday: b.weekday }] : []
+      )
+    const replaceIds = replace
+      ? weekly.filter((b) => windows.some((w) => overlaps(w, b))).map((b) => b.id)
+      : []
+    const busy = weekly.filter((b) => !replaceIds.includes(b.id))
+
+    const themeLines = themes.map((t) => {
+      const p = tree.progress(t.id)
+      const next = p.pending.length
+        ? p.pending.slice(0, 6).map((k) => k.name)
+        : (topicGroups.find((g) => g.parentId === t.id)?.items.map((i) => i.name) ?? [])
+      return (
+        `- [tema ${t.id}] ${tree.path(t.id)}` +
+        (p.total ? `: ${p.total - p.done} tópicos pendentes de ${p.total}` : '') +
+        (t.weeklyGoal ? `; meta de ${t.weeklyGoal} tópicos/semana` : '') +
+        (next.length ? `; próximos: ${next.slice(0, 6).join(', ')}` : '')
+      )
+    })
+    const projectLines = repos.map(
+      (p) =>
+        `- [projeto ${p.id}] ${p.repo}` +
+        (p.description ? `: ${p.description}` : '') +
+        (p.lastCommitAt
+          ? ` (último commit há ${Math.floor((Date.now() - p.lastCommitAt.getTime()) / 86_400_000)} dias)`
+          : '')
+    )
+    const prompt = [
+      'Monte a semana do estudante nos horários livres dele. Os blocos se repetem toda semana.',
+      '',
+      'Horários livres:',
+      ...windows.map((w) => `- ${WEEKDAYS[w.weekday]} ${w.startTime}–${w.endTime}: ${w.kind}`),
+      '',
+      themes.length ? 'Temas de estudo (use nos horários de estudos):' : '',
+      ...themeLines,
+      repos.length ? 'Projetos (use nos horários de projetos):' : '',
+      ...projectLines,
+      busy.length
+        ? '\nBlocos que já existem na agenda (não sobreponha):\n' +
+          busy
+            .map((b) => `- ${WEEKDAYS[b.weekday]} ${b.startTime}–${b.endTime}: ${b.title}`)
+            .join('\n')
+        : '',
+      '',
+      'Regras: cada bloco fica inteiro dentro de um horário livre do tipo certo (tipo "tema" nos ' +
+        'de estudos, tipo "projeto" nos de projetos), com o id do tema ou do projeto. Divida ' +
+        'horários longos em blocos de 1h a 2h30, com 15 minutos de pausa entre eles, e use todos ' +
+        'os horários livres. Varie os temas ao longo da semana e dê mais tempo a quem tem mais ' +
+        'pendências ou meta semanal. Título curto do que fazer no bloco (ex.: "Kurose: leitura", ' +
+        '"Sentinela: tela da semana"), sem citar capítulo ou assunto específico: o bloco se ' +
+        'repete toda semana e mostra sozinho o próximo assunto pendente. Horários HH:MM, 24h.'
+    ]
+      .filter((l) => l !== '')
+      .join('\n')
+
+    const themeIds = new Set(themes.map((t) => t.id))
+    const repoIds = new Set(repos.map((p) => p.id))
+    const nameOf = (kind: 'tema' | 'projeto', id: number): string =>
+      kind === 'tema'
+        ? (themes.find((t) => t.id === id)?.name ?? 'Estudo')
+        : (repos
+            .find((p) => p.id === id)
+            ?.repo.split('/')
+            .pop() ?? 'Projeto')
+    const { ai } = client()
+    const blocks = await untilNotEmpty(async () => {
+      const result = await ai.generate({
+        system: BASE_SYSTEM,
+        prompt,
+        schema: planOutput,
+        name: 'semana'
+      })
+      const out: ProposedBlock[] = []
+      for (const b of result.blocks) {
+        const weekday = parseWeekday(b.weekday)
+        const startTime = parseTime(b.start_time)
+        let endTime = parseTime(b.end_time)
+        if (weekday === null || !startTime || !endTime) continue
+        // Bloco longo demais (a IA às vezes ocupa o horário inteiro): fica com 2h e o resto do
+        // horário é completado depois.
+        if (toMinutes(endTime) - toMinutes(startTime) > 150) {
+          const end = toMinutes(startTime) + 120
+          endTime = `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`
+        }
+        const slot = { weekday, startTime, endTime }
+        const kind = b.kind === 'tema' ? 'estudos' : 'projetos'
+        const fits = windows.some(
+          (w) =>
+            w.weekday === weekday &&
+            w.kind === kind &&
+            toMinutes(startTime) >= toMinutes(w.startTime) &&
+            toMinutes(endTime) <= toMinutes(w.endTime)
+        )
+        const known = b.kind === 'tema' ? themeIds.has(b.id) : repoIds.has(b.id)
+        if (
+          !fits ||
+          !known ||
+          toMinutes(endTime) <= toMinutes(startTime) ||
+          busy.some((o) => overlaps(o, slot)) ||
+          out.some((o) => overlaps(o, slot))
+        ) {
+          continue
+        }
+        out.push({
+          title: b.title.trim().slice(0, 200) || nameOf(b.kind, b.id),
+          topicId: b.kind === 'tema' ? b.id : null,
+          topicName: null,
+          projectId: b.kind === 'projeto' ? b.id : null,
+          weekday,
+          startTime,
+          endTime,
+          notes: null
+        })
+      }
+      return out.slice(0, 60)
+    })
+    // O que a IA deixou vazio nos horários é completado revezando os temas (quem tem mais
+    // pendências primeiro) e os projetos.
+    const pending = (id: number): number =>
+      tree.progress(id).pending.length ||
+      (topicGroups.find((g) => g.parentId === id)?.items.length ?? 1)
+    const filled = fillWindows(windows, blocks, busy, {
+      estudos: themes
+        .toSorted((a, b) => pending(b.id) - pending(a.id))
+        .map((t) => ({
+          title: t.name,
+          topicId: t.id,
+          topicName: null,
+          projectId: null,
+          notes: null
+        })),
+      projetos: repos.map((p) => ({
+        title: nameOf('projeto', p.id),
+        topicId: null,
+        topicName: null,
+        projectId: p.id,
+        notes: null
+      }))
+    }).slice(0, 60)
+    const unused = windows.filter((w) => !filled.some((b) => overlaps(w, b))).length
+    if (unused) notesOut.push(`${unused} horário(s) livre(s) ficaram sem bloco.`)
+    return {
+      proposal: {
+        topics: topicGroups,
+        blocks: filled,
+        replaceBlockIds: filled.length ? replaceIds : []
+      },
+      notes: notesOut
     }
   }
 
@@ -395,48 +684,11 @@ export function createMentorService(
     mentor: {
       async suggestTopics(input) {
         const { topicId, instructions } = suggestTopicsSchema.parse(input)
-        const tree = topicTree(db)
-        const topic = tree.all.find((t) => t.id === topicId)
-        if (!topic) throw new Error('Tema não encontrado')
-        const existing = tree.children(topicId).map((t) => t.name)
-        const noteTitles = db
-          .select({ title: notes.title })
-          .from(notes)
-          .where(inArray(notes.topicId, tree.subtreeIds(topicId)))
-          .all()
-          .map((n) => n.title)
-          .filter(Boolean)
+        return suggestTopicsFor(topicId, instructions ?? null)
+      },
 
-        const prompt = [
-          `Tema: ${tree.path(topicId)}`,
-          topic.description ? `Descrição: ${topic.description}` : '',
-          existing.length ? `Subtópicos que já existem (não repita): ${existing.join('; ')}` : '',
-          noteTitles.length ? `Anotações já feitas nesse tema: ${noteTitles.join('; ')}` : '',
-          instructions ? `Pedido do estudante: ${instructions}` : '',
-          '',
-          'Divida esse tema em tópicos de estudo, na ordem em que faz sentido estudar. Cada tópico ' +
-            'deve caber em uma ou duas sessões de 1 a 3 horas. Entre 4 e 12 tópicos, com nomes ' +
-            'curtos (até 60 caracteres) e uma descrição de uma frase do que estudar.'
-        ]
-          .filter(Boolean)
-          .join('\n')
-
-        const { ai } = client()
-        return untilNotEmpty(async () => {
-          const result = await ai.generate({
-            system: BASE_SYSTEM,
-            prompt,
-            schema: topicsOutput,
-            name: 'topicos'
-          })
-          const seen = new Set(existing.map((n) => n.toLowerCase()))
-          return result.topics
-            .map((t) => ({ name: t.name.trim().slice(0, 120), description: t.description.trim() }))
-            .filter(
-              (t) => t.name && !seen.has(t.name.toLowerCase()) && seen.add(t.name.toLowerCase())
-            )
-            .slice(0, 15)
-        })
+      async planWeek(input) {
+        return planWeek(input)
       },
 
       async suggestSchedule(input) {
@@ -788,6 +1040,7 @@ export function createMentorService(
 
         let reply: string
         let sources: RagSource[]
+        const calls: ToolCall[] = []
         try {
           let rows = liveMessages(conversation)
 
@@ -847,9 +1100,18 @@ export function createMentorService(
 
           reply = await ai.chat({
             system,
-            messages: rows.map((m) => ({ role: m.role, content: m.content })),
+            // A IA não vê os cartões: cada proposta vira uma nota no fim da resposta.
+            messages: rows.map((m) => {
+              const proposal = m.proposal ? (JSON.parse(m.proposal) as MessageProposal) : null
+              return {
+                role: m.role,
+                content: proposal ? `${m.content}\n\n${proposalNote(proposal)}` : m.content
+              }
+            }),
             onDelta: (delta) =>
-              emit({ conversationId: conversation.id, type: 'delta', text: delta })
+              emit({ conversationId: conversation.id, type: 'delta', text: delta }),
+            tools: MENTOR_TOOLS,
+            onToolCall: (name, input) => calls.push({ name, input })
           })
         } catch (error) {
           // Falhou: desfaz a mensagem (e a conversa nova) para o estudante tentar de novo.
@@ -858,13 +1120,34 @@ export function createMentorService(
           throw error
         }
 
+        const proposed = proposalFromToolCalls(db, calls)
+        if (proposed) {
+          // Ao chamar a ferramenta, modelos locais às vezes não escrevem nada.
+          if (!reply.trim()) reply = 'Preparei a proposta abaixo. Revise e clique em **Criar**.'
+          const left = [
+            proposed.busy && `${proposed.busy} batiam com blocos que já estão na agenda`,
+            proposed.invalid && `${proposed.invalid} vieram com dia ou horário inválido`
+          ].filter(Boolean)
+          if (left.length) {
+            reply += `\n\n_Blocos que ficaram de fora: ${left.join('; ')}._`
+          }
+        } else if (!reply.trim() && calls.length) {
+          reply = 'Tentei preparar uma proposta, mas ela veio incompleta. Pode pedir de novo?'
+        }
         const message = db
           .insert(aiMessages)
           .values({
             conversationId: conversation.id,
             role: 'assistant',
             content: reply,
-            sources: sources.length ? JSON.stringify(sources) : null
+            sources: sources.length ? JSON.stringify(sources) : null,
+            proposal: proposed
+              ? JSON.stringify({
+                  ...proposed.proposal,
+                  status: 'pending',
+                  result: null
+                } satisfies MessageProposal)
+              : null
           })
           .returning()
           .get()
@@ -876,6 +1159,19 @@ export function createMentorService(
           .get()!
         emit({ conversationId: conversation.id, type: 'done', text: reply })
         return { conversation: updated, message: toMessage(message) }
+      },
+
+      async applyProposal(messageId, skip) {
+        const { row, proposal } = proposalRow(messageId)
+        if (proposal.status !== 'pending') throw new Error('Esta proposta já foi resolvida')
+        const result = applyProposal(db, proposal, proposalSkipSchema.parse(skip))
+        return saveProposal(row.id, { ...proposal, status: 'applied', result })
+      },
+
+      async discardProposal(messageId) {
+        const { row, proposal } = proposalRow(messageId)
+        if (proposal.status !== 'pending') throw new Error('Esta proposta já foi resolvida')
+        return saveProposal(row.id, { ...proposal, status: 'discarded' })
       },
 
       async compact(input) {

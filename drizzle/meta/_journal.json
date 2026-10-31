@@ -85,6 +85,13 @@
       "when": 1793236348900,
       "tag": "0011_topic_book",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1793402689668,
+      "tag": "0012_week_plan",
+      "breakpoints": true
     }
   ]
 }

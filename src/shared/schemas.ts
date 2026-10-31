@@ -103,6 +103,8 @@ export type TaskFilter = z.input<typeof taskFilterSchema>
 const scheduleBlockFields = {
   title: z.string().trim().min(1, 'Informe um título').max(200),
   topicId: id.nullable(),
+  /** Projeto do GitHub trabalhado no bloco (horários de projetos da Semana). */
+  projectId: id.nullable(),
   color: hexColor.nullable(),
   recurrence: recurrenceSchema,
   weekday: z.number().int().min(0).max(6).nullable(),
@@ -145,6 +147,91 @@ export type ScheduleBlockUpdate = z.input<typeof scheduleBlockUpdateSchema>
 
 export const dateRangeSchema = z.object({ from: isoDateSchema, to: isoDateSchema })
 export type DateRange = z.input<typeof dateRangeSchema>
+
+// Semana: horários livres do estudante (para estudos ou projetos) e o plano montado neles
+
+export const WINDOW_KINDS = ['estudos', 'projetos'] as const
+export type WindowKind = (typeof WINDOW_KINDS)[number]
+
+export const weekWindowSchema = z
+  .object({
+    weekday: z.number().int().min(0).max(6),
+    startTime: time,
+    endTime: time,
+    kind: z.enum(WINDOW_KINDS)
+  })
+  .refine((w) => w.endTime > w.startTime, {
+    path: ['endTime'],
+    message: 'O fim precisa ser depois do início'
+  })
+export type WeekWindow = z.infer<typeof weekWindowSchema>
+
+export const weekAvailabilitySchema = z.object({ windows: z.array(weekWindowSchema).max(100) })
+export type WeekAvailability = z.infer<typeof weekAvailabilitySchema>
+
+export const planWeekSchema = z
+  .object({
+    topicIds: z.array(id).max(20),
+    projectIds: z.array(id).max(20),
+    /** Divide em subtópicos (com a IA) os temas escolhidos que ainda não têm nenhum. */
+    splitTopics: z.boolean(),
+    /** Tira os blocos semanais que caem nos horários livres (o plano novo fica no lugar). */
+    replace: z.boolean()
+  })
+  .refine((p) => p.topicIds.length + p.projectIds.length > 0, {
+    message: 'Escolha pelo menos um tema ou projeto'
+  })
+export type PlanWeekInput = z.input<typeof planWeekSchema>
+
+/**
+ * Proposta de mudanças (da mentora na conversa ou do plano da semana): temas novos e blocos
+ * semanais. Nada é criado até o estudante confirmar.
+ */
+export interface ProposedTopic {
+  name: string
+  children: ProposedTopic[]
+}
+
+const proposedTopicSchema: z.ZodType<ProposedTopic> = z.lazy(() =>
+  z.object({
+    name: topicFields.name,
+    children: z.array(proposedTopicSchema).max(50)
+  })
+)
+
+export const proposedBlockSchema = z.object({
+  title: scheduleBlockFields.title,
+  topicId: id.nullable(),
+  /** Tema pelo nome, quando ele é criado na mesma proposta (ainda sem id). */
+  topicName: z.string().max(200).nullable(),
+  projectId: id.nullable(),
+  weekday: z.number().int().min(0).max(6),
+  startTime: time,
+  endTime: time,
+  notes: optionalText(2000)
+})
+export type ProposedBlock = z.infer<typeof proposedBlockSchema>
+
+export const proposalSchema = z.object({
+  /** Temas novos, agrupados pelo tema onde entram (null = temas principais). */
+  topics: z
+    .array(z.object({ parentId: id.nullable(), items: z.array(proposedTopicSchema).max(50) }))
+    .max(30),
+  blocks: z.array(proposedBlockSchema).max(60),
+  /** Blocos semanais que saem para os novos entrarem (plano da semana com "substituir"). */
+  replaceBlockIds: z.array(id).max(200)
+})
+export type Proposal = z.infer<typeof proposalSchema>
+
+/**
+ * O que o estudante desmarcou na proposta. Temas por chave "grupo.item.subitem" (desmarcar um
+ * tema tira os subtópicos dele); blocos pelo índice.
+ */
+export const proposalSkipSchema = z.object({
+  topics: z.array(z.string().max(30)).max(500),
+  blocks: z.array(z.number().int().min(0)).max(60)
+})
+export type ProposalSkip = z.infer<typeof proposalSkipSchema>
 
 // Anotações (conteúdo = blocos do BlockNote)
 

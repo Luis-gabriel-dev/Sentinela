@@ -1,6 +1,7 @@
 import { desc, eq, inArray, isNull } from 'drizzle-orm'
 import { subtreeProgress, type SubtreeProgress } from '@shared/progress'
 import type { Db } from '../db/client'
+import { readWeekAvailability, vacantSlots } from '../services/week'
 import {
   bookHighlights,
   books,
@@ -88,7 +89,7 @@ export function studySnapshot(db: Db): string {
     ...capped(tracked, 40, (topic) => {
       const p = tree.progress(topic.id)
       return (
-        `- ${tree.path(topic.id)}: ${p.done}/${p.total} tópicos concluídos` +
+        `- [id ${topic.id}] ${tree.path(topic.id)}: ${p.done}/${p.total} tópicos concluídos` +
         (topic.weeklyGoal
           ? ` (meta ${topic.weeklyGoal}/semana; ${p.doneThisWeek} nesta semana)`
           : '') +
@@ -106,7 +107,7 @@ export function studySnapshot(db: Db): string {
     lines.push(
       `- Outros temas: ${roots
         .slice(0, 30)
-        .map((t) => t.name)
+        .map((t) => `[id ${t.id}] ${t.name}`)
         .join(', ')}`
     )
   }
@@ -129,6 +130,23 @@ export function studySnapshot(db: Db): string {
     )
   )
   if (!weekly.length) lines.push('- (nenhum bloco semanal)')
+
+  const { windows } = readWeekAvailability(db)
+  if (windows.length) {
+    lines.push('', '## Horários livres do estudante (página Semana)')
+    lines.push(
+      ...windows.map((w) => `- ${WEEKDAYS[w.weekday]} ${w.startTime}–${w.endTime}: ${w.kind}`)
+    )
+    // Já descontados os blocos: é onde dá para propor blocos novos sem sobrepor.
+    const vacant = vacantSlots(windows, weekly)
+    lines.push(
+      '',
+      '## Horários livres ainda vagos (sem bloco)',
+      ...(vacant.length
+        ? vacant.map((w) => `- ${WEEKDAYS[w.weekday]} ${w.startTime}–${w.endTime}: ${w.kind}`)
+        : ['- (nenhum: a semana está cheia; para mudar, use Semana > Planejar com IA)'])
+    )
+  }
 
   lines.push('', '## Tarefas abertas')
   const open = db

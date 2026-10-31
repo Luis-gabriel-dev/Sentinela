@@ -1,9 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { ArrowUp, FoldVertical, Loader2, MessageSquarePlus, Trash2 } from 'lucide-react'
+import { Link } from 'react-router'
+import {
+  ArrowUp,
+  FoldVertical,
+  ListPlus,
+  Loader2,
+  MessageSquarePlus,
+  Plus,
+  Trash2
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { AI_STREAM_CHANNEL } from '@shared/api'
-import type { AiStreamEvent, Conversation, RagSource } from '@shared/types'
+import type {
+  AiStreamEvent,
+  ChatMessage,
+  Conversation,
+  MessageProposal,
+  RagSource
+} from '@shared/types'
 import { Button } from '@renderer/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@renderer/components/ui/popover'
 import { Textarea } from '@renderer/components/ui/textarea'
@@ -11,14 +26,23 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui
 import { ConfirmDelete } from '@renderer/components/confirm-delete'
 import { MentorIcon } from '@renderer/components/icons'
 import { Markdown } from '@renderer/components/markdown'
+import { ProposalView } from '@renderer/components/proposal-view'
+import {
+  emptySelection,
+  selectedCount,
+  toSkip,
+  type ProposalSelection
+} from '@renderer/lib/proposal'
 import { SourceLink } from '@renderer/components/source-link'
 import { api } from '@renderer/lib/api'
 import { timeAgo } from '@renderer/lib/projects'
 import {
+  useApplyProposal,
   useCompactConversation,
   useContextUsage,
   useConversations,
   useDeleteConversation,
+  useDiscardProposal,
   useMessages
 } from '@renderer/lib/queries'
 import { cn } from '@renderer/lib/utils'
@@ -192,7 +216,9 @@ export function MentorChat(): React.JSX.Element {
                 {m.role === 'user' ? (
                   <UserBubble text={m.content} />
                 ) : (
-                  <AssistantBubble text={m.content} sources={m.sources} />
+                  <AssistantBubble text={m.content} sources={m.sources}>
+                    {m.proposal && <ProposalCard message={m} proposal={m.proposal} />}
+                  </AssistantBubble>
                 )}
                 {active?.summary && m.id === active.summaryUntil && (
                   <SummaryDivider conversation={active} />
@@ -379,10 +405,12 @@ function UserBubble({ text }: { text: string }): React.JSX.Element {
 
 function AssistantBubble({
   text,
-  sources
+  sources,
+  children
 }: {
   text: string
   sources: RagSource[] | null
+  children?: React.ReactNode
 }): React.JSX.Element {
   return (
     <div className="flex gap-3">
@@ -392,10 +420,92 @@ function AssistantBubble({
       <div className="min-w-0 flex-1">
         <Markdown>{text}</Markdown>
         {sources?.length ? <Sources text={text} sources={sources} /> : null}
+        {children}
       </div>
     </div>
   )
 }
+
+/** Temas e blocos que a mentora propôs: nada é criado antes de o estudante confirmar. */
+function ProposalCard({
+  message,
+  proposal
+}: {
+  message: ChatMessage
+  proposal: MessageProposal
+}): React.JSX.Element {
+  const [selection, setSelection] = useState<ProposalSelection>(emptySelection)
+  const apply = useApplyProposal()
+  const discard = useDiscardProposal()
+  const count = selectedCount(proposal, selection)
+  const busy = apply.isPending || discard.isPending
+  const pending = proposal.status === 'pending'
+
+  return (
+    <div className="mt-3 grid gap-3 rounded-xl border bg-card p-3">
+      <div className="flex items-center gap-2 text-sm font-medium">
+        <ListPlus className="size-4 text-primary" />
+        {pending
+          ? 'A mentora quer criar'
+          : proposal.status === 'applied'
+            ? 'Criado'
+            : 'Proposta descartada'}
+      </div>
+      <ProposalView
+        proposal={proposal}
+        selection={selection}
+        onChange={setSelection}
+        readOnly={!pending}
+      />
+      {pending ? (
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => discard.mutate([message.id])}
+          >
+            Descartar
+          </Button>
+          <Button
+            size="sm"
+            disabled={busy || count === 0}
+            onClick={() =>
+              apply.mutate([message.id, toSkip(selection)], {
+                onSuccess: (m) => {
+                  const r = m.proposal?.result
+                  if (r) toast.success(createdText(r.topics, r.blocks))
+                }
+              })
+            }
+          >
+            {apply.isPending ? <Loader2 className="animate-spin" /> : <Plus />}
+            Criar {count} {count === 1 ? 'item' : 'itens'}
+          </Button>
+        </div>
+      ) : (
+        proposal.result && (
+          <p className="text-xs text-muted-foreground">
+            {createdText(proposal.result.topics, proposal.result.blocks)}. Veja em{' '}
+            <Link to="/temas" className="text-primary hover:underline">
+              Temas e progresso
+            </Link>{' '}
+            e na{' '}
+            <Link to="/semana" className="text-primary hover:underline">
+              Semana
+            </Link>
+            .
+          </p>
+        )
+      )}
+    </div>
+  )
+}
+
+const createdText = (topics: number, blocks: number): string =>
+  [topics && `${topics} tema(s)`, blocks && `${blocks} bloco(s) na agenda`]
+    .filter(Boolean)
+    .join(' e ') + ' criados'
 
 /** Trechos citados na resposta ([n]) e, recolhidos, os outros que a busca entregou. */
 function Sources({ text, sources }: { text: string; sources: RagSource[] }): React.JSX.Element {

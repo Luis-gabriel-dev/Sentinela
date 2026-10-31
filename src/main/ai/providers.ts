@@ -11,6 +11,30 @@ export interface ChatTurn {
   content: string
 }
 
+/** Ferramenta que o modelo pode chamar numa conversa (a entrada vem sem validar). */
+export interface AiTool {
+  name: string
+  description: string
+  schema: z.ZodType
+}
+
+/** JSON Schema da entrada da ferramenta, sem o "$schema" (que alguns provedores recusam). */
+function toolParameters(tool: AiTool): { type: 'object'; [k: string]: unknown } {
+  const json = z.toJSONSchema(tool.schema) as Record<string, unknown>
+  delete json.$schema
+  return { ...json, type: 'object' }
+}
+
+/** Argumentos da chamada: alguns provedores mandam JSON em texto, outros o objeto. */
+function parseToolArguments(args: unknown): unknown {
+  if (typeof args !== 'string') return args
+  try {
+    return JSON.parse(args)
+  } catch {
+    return null
+  }
+}
+
 /** O que o Sentinela precisa de qualquer provedor de IA. */
 export interface AiClient {
   /**
@@ -25,11 +49,16 @@ export interface AiClient {
     schema: z.ZodType<T>
     name: string
   }): Promise<T>
-  /** Conversa com streaming; devolve o texto final. */
+  /**
+   * Conversa com streaming; devolve o texto final. Com `tools`, o modelo pode chamá-las: cada
+   * chamada chega em `onToolCall` (uma rodada só; o resultado não volta para o modelo).
+   */
   chat(request: {
     system: string
     messages: ChatTurn[]
     onDelta: (text: string) => void
+    tools?: AiTool[]
+    onToolCall?: (name: string, input: unknown) => void
   }): Promise<string>
   listModels(): Promise<ModelInfo[]>
 }
@@ -108,7 +137,7 @@ function anthropicClient(apiKey: string, model: string): AiClient {
       }
     },
 
-    async chat({ system, messages, onDelta }) {
+    async chat({ system, messages, onDelta, tools, onToolCall }) {
       try {
         const stream = client.beta.messages.stream({
           model,
@@ -116,7 +145,14 @@ function anthropicClient(apiKey: string, model: string): AiClient {
           ...fallback,
           system,
           messages,
-          output_config: { effort: 'medium' }
+          output_config: { effort: 'medium' },
+          ...(tools?.length && {
+            tools: tools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              input_schema: toolParameters(t)
+            }))
+          })
         })
         for await (const event of stream) {
           if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
@@ -125,6 +161,9 @@ function anthropicClient(apiKey: string, model: string): AiClient {
         }
         const final = await stream.finalMessage()
         checkRefusal(final.stop_reason)
+        for (const block of final.content) {
+          if (block.type === 'tool_use') onToolCall?.(block.name, block.input)
+        }
         // Texto final consolidado (num fallback, o modelo que respondeu pode ter mudado).
         return final.content
           .flatMap((block) => (block.type === 'text' ? [block.text] : []))
@@ -190,19 +229,33 @@ function openaiClient(apiKey: string, model: string): AiClient {
       }
     },
 
-    async chat({ system, messages, onDelta }) {
+    async chat({ system, messages, onDelta, tools, onToolCall }) {
       try {
         const stream = await client.responses.create({
           model,
           instructions: system,
           input: messages.map((m) => ({ role: m.role, content: m.content })),
-          stream: true
+          stream: true,
+          ...(tools?.length && {
+            tools: tools.map((t) => ({
+              type: 'function' as const,
+              name: t.name,
+              description: t.description,
+              parameters: toolParameters(t),
+              strict: false
+            }))
+          })
         })
         let text = ''
         for await (const event of stream) {
           if (event.type === 'response.output_text.delta') {
             text += event.delta
             onDelta(event.delta)
+          } else if (
+            event.type === 'response.output_item.done' &&
+            event.item.type === 'function_call'
+          ) {
+            onToolCall?.(event.item.name, parseToolArguments(event.item.arguments))
           } else if (event.type === 'response.failed' || event.type === 'error') {
             throw new AiError('A OpenAI interrompeu a resposta')
           }
@@ -252,6 +305,9 @@ function ollamaFormat(schema: z.ZodType): Record<string, unknown> {
   return json
 }
 
+/** O modelo do Ollama não aceita ferramentas (a conversa segue sem elas). */
+class ToolsUnsupportedError extends AiError {}
+
 /** Chamada ao Ollama com as mensagens de erro em português. `body` ausente = GET. */
 async function ollamaFetch(
   baseUrl: string,
@@ -282,6 +338,7 @@ async function ollamaFetch(
   }
   if (!response.ok) {
     const detail = await response.text().catch(() => '')
+    if (detail.includes('does not support tools')) throw new ToolsUnsupportedError(detail)
     if (detail.includes('exceed_context_size')) {
       throw new AiError(
         'O pedido ficou grande demais para o modelo local. Compacte a conversa ou use menos ' +
@@ -377,7 +434,8 @@ export async function ollamaEmbed(
  */
 async function readOllamaStream(
   response: Response,
-  onDelta: (text: string) => void = () => {}
+  onDelta: (text: string) => void = () => {},
+  onToolCall?: (name: string, input: unknown) => void
 ): Promise<string> {
   const reader = response.body!.getReader()
   const decoder = new TextDecoder()
@@ -390,8 +448,19 @@ async function readOllamaStream(
     const lines = buffer.split('\n')
     buffer = lines.pop() ?? ''
     for (const line of lines.filter((l) => l.trim())) {
-      const chunk = JSON.parse(line) as { message?: { content?: string }; error?: string }
+      const chunk = JSON.parse(line) as {
+        message?: {
+          content?: string
+          tool_calls?: { function?: { name?: string; arguments?: unknown } }[]
+        }
+        error?: string
+      }
       if (chunk.error) throw new AiError(`Ollama: ${chunk.error}`)
+      for (const call of chunk.message?.tool_calls ?? []) {
+        if (call.function?.name) {
+          onToolCall?.(call.function.name, parseToolArguments(call.function.arguments))
+        }
+      }
       const delta = chunk.message?.content ?? ''
       if (delta) {
         text += delta
@@ -430,15 +499,30 @@ function ollamaClient(baseUrl: string, model: string): AiClient {
       }
     },
 
-    async chat({ system, messages, onDelta }) {
-      const response = await post('/api/chat', {
-        model,
-        stream: true,
-        // Abaixo do padrão do Ollama (0,8): o qwen2.5 às vezes troca de idioma no meio da frase.
-        ...ollamaOptions({ temperature: 0.6 }),
-        messages: [{ role: 'system', content: system }, ...messages]
-      })
-      return readOllamaStream(response, onDelta)
+    async chat({ system, messages, onDelta, tools, onToolCall }) {
+      const request = (withTools: boolean): Promise<Response> =>
+        post('/api/chat', {
+          model,
+          stream: true,
+          // Abaixo do padrão do Ollama (0,8): o qwen2.5 às vezes troca de idioma no meio da frase.
+          ...ollamaOptions({ temperature: 0.6 }),
+          messages: [{ role: 'system', content: system }, ...messages],
+          ...(withTools && {
+            tools: tools!.map((t) => ({
+              type: 'function',
+              function: { name: t.name, description: t.description, parameters: toolParameters(t) }
+            }))
+          })
+        })
+      let response: Response
+      try {
+        response = await request(!!tools?.length)
+      } catch (error) {
+        // Modelo sem suporte a ferramentas: conversa normal, sem propostas.
+        if (!(error instanceof ToolsUnsupportedError)) throw error
+        response = await request(false)
+      }
+      return readOllamaStream(response, onDelta, onToolCall)
     },
 
     listModels: () => ollamaModels(baseUrl)

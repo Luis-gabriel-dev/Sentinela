@@ -70,6 +70,18 @@ export function AgendaIcon(props: IconProps): React.JSX.Element {
   )
 }
 
+/** Semana: calendário com a lista de blocos do dia, um já marcado. */
+export function WeekIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Icon {...props}>
+      <Duo d="M6.5 4.5h11a3 3 0 0 1 3 3v2h-17v-2a3 3 0 0 1 3-3Z" />
+      <rect x="3.5" y="4.5" width="17" height="16" rx="3" />
+      <path d="M3.5 9.5h17M8 3v3M16 3v3" />
+      <path d="m7 13.2 1 1 1.6-1.8M7 17.5h2.5M12 13.5h5M12 17.5h5" />
+    </Icon>
+  )
+}
+
 export function TasksIcon(props: IconProps): React.JSX.Element {
   return (
     <Icon {...props}>
